@@ -260,7 +260,7 @@ static int _cgi_changestate(mod_cgi_ctx_t *ctx, int state)
 	return state;
 }
 
-static int _cgi_start(_mod_cgi_t *mod, http_message_t *request, http_message_t *response)
+static int _cgi_start(_mod_cgi_t *mod, http_message_t *request)
 {
 	const mod_cgi_config_t *config = mod->config;
 	int ret = EREJECT;
@@ -327,7 +327,6 @@ static int _cgi_start(_mod_cgi_t *mod, http_message_t *request, http_message_t *
 		/* at least user or group may execute the CGI */
 		if ((filestat.st_mode & (S_IXUSR | S_IXGRP)) != (S_IXUSR | S_IXGRP))
 		{
-			httpmessage_result(response, RESULT_403);
 			warn("cgi: %s access denied", uri);
 			warn("cgi: %s", strerror(errno));
 			close(scriptfd);
@@ -470,7 +469,9 @@ static int _cgi_connector(void *arg, http_message_t *request, http_message_t *re
 
 	if (ctx == NULL)
 	{
-		ret = _cgi_start(mod, request, response);
+		ret = _cgi_start(mod, request);
+		if (ret == ESUCCESS)
+			httpmessage_result(response, RESULT_403);
 		if (ret != EINCOMPLETE)
 			return ret;
 		ctx = httpmessage_private(request, NULL);
