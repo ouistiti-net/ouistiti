@@ -88,9 +88,8 @@ struct mod_cgi_ctx_s
 	string_t path_info;
 
 	pid_t pid;
-	int tocgi[2];
-	int fromcgi[2];
-
+	int tocgi;
+	int fromcgi;
 	char *chunk;
 };
 
@@ -171,10 +170,10 @@ static void _cgi_freectx(mod_cgi_ctx_t *ctx)
 {
 	if (ctx->chunk)
 		free(ctx->chunk);
-	if (ctx->fromcgi[0])
-		close(ctx->fromcgi[0]);
-	if (ctx->tocgi[1] > 0)
-		close(ctx->tocgi[1]);
+	if (ctx->fromcgi > 0)
+		close(ctx->fromcgi);
+	if (ctx->tocgi > 0)
+		close(ctx->tocgi);
 	free(ctx);
 }
 
@@ -183,17 +182,21 @@ static int _mod_cgi_fork(mod_cgi_ctx_t *ctx, http_message_t *request, string_t *
 	_mod_cgi_t *mod = ctx->mod;
 	const mod_cgi_config_t *config = mod->config;
 
-	if (pipe(ctx->tocgi) < 0)
+	int tocgi[2];
+	if (pipe(tocgi) < 0)
 		return EREJECT;
-	if (pipe(ctx->fromcgi))
+	int fromcgi[2];
+	if (pipe(fromcgi))
 		return EREJECT;
 	pid_t pid = fork();
 	if (pid)
 	{
 		/* keep only input of the pipe */
-		close(ctx->tocgi[0]);
+		close(tocgi[0]);
+		ctx->tocgi = tocgi[1];
 		/* keep only output of the pipe */
-		close(ctx->fromcgi[1]);
+		close(fromcgi[1]);
+		ctx->fromcgi = fromcgi[0];
 #ifdef DEBUG
 		char **envs = NULL;
 		envs = cgi_buildenv(config, request, cgi_path, path_info);
@@ -208,18 +211,18 @@ static int _mod_cgi_fork(mod_cgi_ctx_t *ctx, http_message_t *request, string_t *
 	else /* into child */
 	{
 		int flags;
-		flags = fcntl(ctx->tocgi[0],F_GETFD);
-		fcntl(ctx->tocgi[0],F_SETFD, flags | FD_CLOEXEC);
-		flags = fcntl(ctx->fromcgi[1],F_GETFD);
-		fcntl(ctx->fromcgi[1],F_SETFD, flags | FD_CLOEXEC);
+		flags = fcntl(tocgi[0],F_GETFD);
+		fcntl(tocgi[0],F_SETFD, flags | FD_CLOEXEC);
+		flags = fcntl(fromcgi[1],F_GETFD);
+		fcntl(fromcgi[1],F_SETFD, flags | FD_CLOEXEC);
 		/* send data from server to the stdin of the cgi */
-		close(ctx->tocgi[1]);
-		dup2(ctx->tocgi[0], STDIN_FILENO);
-		close(ctx->tocgi[0]);
+		close(tocgi[1]);
+		dup2(tocgi[0], STDIN_FILENO);
+		close(tocgi[0]);
 		/* send data from the stdout of the cgi to server */
-		close(ctx->fromcgi[0]);
-		dup2(ctx->fromcgi[1], STDOUT_FILENO);
-		close(ctx->fromcgi[1]);
+		close(fromcgi[0]);
+		dup2(fromcgi[1], STDOUT_FILENO);
+		close(fromcgi[1]);
 
 		int sock = httpmessage_keepalive(request);
 
@@ -365,11 +368,11 @@ static int _cgi_request(mod_cgi_ctx_t *ctx, http_message_t *request)
 #endif
 		fd_set wfds;
 		FD_ZERO(&wfds);
-		FD_SET(ctx->tocgi[1], &wfds);
+		FD_SET(ctx->tocgi, &wfds);
 
-		ret = select(ctx->tocgi[1] + 1, NULL, &wfds, NULL, &mod->config->timeout);
+		ret = select(ctx->tocgi + 1, NULL, &wfds, NULL, &mod->config->timeout);
 		if (ret == 1)
-			len = write(ctx->tocgi[1], input, inputlen);
+			len = write(ctx->tocgi, input, inputlen);
 		else
 			len = 0;
 		cgi_dbg("cgi: wrote %d %d", len, inputlen);
@@ -419,12 +422,12 @@ static int _cgi_response(mod_cgi_ctx_t *ctx, http_message_t *response)
 	fd_set rfds;
 
 	FD_ZERO(&rfds);
-	FD_SET(ctx->fromcgi[0], &rfds);
-	sret = select(ctx->fromcgi[0] + 1, &rfds, NULL, NULL, &mod->config->timeout);
-	if (sret > 0 && FD_ISSET(ctx->fromcgi[0], &rfds))
+	FD_SET(ctx->fromcgi, &rfds);
+	sret = select(ctx->fromcgi + 1, &rfds, NULL, NULL, &mod->config->timeout);
+	if (sret > 0 && FD_ISSET(ctx->fromcgi, &rfds))
 	{
 		int size = config->chunksize;
-		size = read(ctx->fromcgi[0], ctx->chunk, size);
+		size = read(ctx->fromcgi, ctx->chunk, size);
 		if (size < 0)
 		{
 			err("cgi: read %s", strerror(errno));
@@ -482,7 +485,7 @@ static int _cgi_connector(void *arg, http_message_t *request, http_message_t *re
 	{
 
 		int instate = (ctx->state & STATE_INMASK);
-		if (ctx->tocgi[1] > 0 && instate >= STATE_INSTART && instate < STATE_INFINISH)
+		if (ctx->tocgi > 0 && instate >= STATE_INSTART && instate < STATE_INFINISH)
 		{
 			_cgi_request(ctx, request);
 			/**
@@ -491,9 +494,9 @@ static int _cgi_connector(void *arg, http_message_t *request, http_message_t *re
 		}
 		else if (instate == STATE_INFINISH)
 		{
-			if (ctx->tocgi[1] > 0)
-				close(ctx->tocgi[1]);
-			ctx->tocgi[1] = -1;
+			if (ctx->tocgi > 0)
+				close(ctx->tocgi);
+			ctx->tocgi = -1;
 			_cgi_changestate(ctx, STATE_INMASK);
 		}
 		/**
@@ -521,7 +524,7 @@ static int _cgi_connector(void *arg, http_message_t *request, http_message_t *re
 		}
 		else if (outstate == STATE_OUTFINISH)
 		{
-			close(ctx->fromcgi[0]);
+			close(ctx->fromcgi);
 			if (instate == STATE_INMASK)
 				ctx->state = STATE_END;
 			ret = ECONTINUE;
