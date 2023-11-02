@@ -178,7 +178,7 @@ static void _cgi_freectx(mod_cgi_ctx_t *ctx)
 	free(ctx);
 }
 
-static int _mod_cgi_fork(mod_cgi_ctx_t *ctx, http_message_t *request)
+static int _mod_cgi_fork(mod_cgi_ctx_t *ctx, http_message_t *request, string_t *cgi_path, string_t *path_info)
 {
 	_mod_cgi_t *mod = ctx->mod;
 	const mod_cgi_config_t *config = mod->config;
@@ -196,7 +196,7 @@ static int _mod_cgi_fork(mod_cgi_ctx_t *ctx, http_message_t *request)
 		close(ctx->fromcgi[1]);
 #ifdef DEBUG
 		char **envs = NULL;
-		envs = cgi_buildenv(config, request, ctx->cgi_path.data, ctx->cgi_path.length, ctx->path_info.data, ctx->path_info.length);
+		envs = cgi_buildenv(config, request, cgi_path, path_info);
 		char *env = *envs++;
 		while (env != NULL)
 		{
@@ -223,10 +223,10 @@ static int _mod_cgi_fork(mod_cgi_ctx_t *ctx, http_message_t *request)
 
 		int sock = httpmessage_keepalive(request);
 
-		char * const argv[2] = { (char *)ctx->cgi_path.data, NULL };
+		char * const argv[2] = { (char *)cgi_path->data, NULL };
 
 		char **env = NULL;
-		env = cgi_buildenv(config, request, ctx->cgi_path.data, ctx->cgi_path.length, ctx->path_info.data, ctx->path_info.length);
+		env = cgi_buildenv(config, request, cgi_path, path_info);
 
 		close(sock);
 
@@ -236,11 +236,11 @@ static int _mod_cgi_fork(mod_cgi_ctx_t *ctx, http_message_t *request)
 		 * cgipath is absolute, but in fact execveat runs in docroot.
 		 */
 #ifdef USE_EXECVEAT
-		execveat(mod->rootfd, ctx->cgi_path.data, argv, env, 0);
+		execveat(mod->rootfd, cgi_path->data, argv, env, 0);
 #else
 		// this part die if the program is running under valgrind
 		// use execeat
-		int scriptfd = openat(mod->rootfd, ctx->cgi_path.data, O_PATH);
+		int scriptfd = openat(mod->rootfd, cgi_path->data, O_PATH);
 		close(mod->rootfd);
 		fexecve(scriptfd, argv, env);
 #endif
@@ -337,7 +337,7 @@ static int _cgi_start(_mod_cgi_t *mod, http_message_t *request, http_message_t *
 
 		dbg("cgi: run %s", uri);
 		ctx->mod = mod;
-		ctx->pid = _mod_cgi_fork(ctx, request);
+		ctx->pid = _mod_cgi_fork(ctx, request, &ctx->cgi_path, &ctx->path_info);
 		ctx->state = STATE_INSTART;
 		ctx->chunk = malloc(config->chunksize + 1);
 		httpmessage_private(request, ctx);

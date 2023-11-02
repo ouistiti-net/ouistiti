@@ -237,18 +237,18 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 {
 	const mod_python_config_t *config = mod->config;
 	int ret = EREJECT;
-	const char *uri = NULL;
-	size_t urilen = httpmessage_REQUEST2(request,"uri", &uri);
-	if (uri && config->docroot)
+	string_t uri = {0};
+	uri.length = httpmessage_REQUEST2(request,"uri", &uri.data);
+	if (uri.data && config->docroot)
 	{
 		const char *function = NULL;
-		if (htaccess_check(&config->htaccess, uri, &function) != ESUCCESS)
+		if (htaccess_check(&config->htaccess, uri.data, &function) != ESUCCESS)
 		{
-			dbg("python: %s forbidden extension", uri);
+			dbg("python: %s forbidden extension", uri.data);
 			return EREJECT;
 		}
 		python_dbg("python: new uri %s", function);
-		if (function == uri)
+		if (function == uri.data)
 		{
 			// path_info must not be the first caracter of uri
 			function = strchr(function + 1, '/');
@@ -258,30 +258,30 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 		 * function name.
 		 * /test.python/function => /test.python and  function
 		 */
-		if (function != NULL && (size_t)(function - uri) < urilen)
+		if (function != NULL && (size_t)(function - uri.data) < uri.length)
 		{
-			urilen = function - uri;
+			uri.length = function - uri.data;
 		}
 		else
-			function = uri + urilen;
+			function = uri.data + uri.length;
 
-		while (*uri == '/' && *uri != '\0')
+		while (*uri.data == '/' && *uri.data != '\0')
 		{
-			uri++;
-			urilen--;
+			uri.data++;
+			uri.length--;
 		}
 		while (*function == '/' && *function != '\0')
 		{
 			function++;
 		}
 
-		python_dbg("python: new uri %.*s", (int)urilen, uri);
+		python_dbg("python: new uri %.*s", (int)uri.length, uri.data);
 		python_dbg("python: function %s", function);
 		PyObject *pymodule = NULL;
 		_mod_python_script_t *script = mod->scripts;
 		while (script)
 		{
-			if (((size_t)urilen == script->path.length) && !strncasecmp(script->path.data, uri, urilen))
+			if (((size_t)uri.length == script->path.length) && !_string_cmp(&script->path, uri.data, uri.length))
 			{
 				pymodule = script->pymodule;
 				break;
@@ -290,7 +290,7 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 		}
 		if (pymodule == NULL)
 		{
-			pymodule = _mod_python_modulize(uri, urilen);
+			pymodule = _mod_python_modulize(uri.data, uri.length);
 		}
 		PyObject *pyfunc = NULL;
 		if (pymodule != NULL)
@@ -310,7 +310,7 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 		ctx->mod = mod;
 		ctx->pymodule = pymodule;
 		ctx->pyfunc = pyfunc;
-		char **env = cgi_buildenv(config, request, uri, urilen, NULL, 0);
+		char **env = cgi_buildenv(config, request, &uri, NULL);
 		int count = 0;
 		ctx->pyenv = PyDict_New();
 		for (;env[count] != NULL; count++)
