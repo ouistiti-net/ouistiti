@@ -245,7 +245,7 @@ static int _python_createPyRequest(mod_python_ctx_t *ctx, http_message_t *reques
 	{
 		uri->data = PyBytes_AsString(pylatin1value);
 		dbg("module file %s", uri->data);
-		uri->length = -1;
+		uri->length = strlen(uri->data);
 	}
 
 	PyObject *pyrequestclass = PyObject_GetAttrString(ctx->pymodule, "HttpRequest");
@@ -263,7 +263,7 @@ static int _python_createPyRequest(mod_python_ctx_t *ctx, http_message_t *reques
 		PyErr_Print();
 		return ESUCCESS;
 	}
-	char **env = cgi_buildenv(config, request, uri, path_info);
+	char **env = (char **)cgi_buildenv(config, request, uri, path_info);
 	int count = 0;
 	PyObject *pyenv = PyDict_New();
 	for (;env[count] != NULL; count++)
