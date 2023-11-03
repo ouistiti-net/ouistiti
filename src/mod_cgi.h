@@ -48,7 +48,7 @@ struct mod_cgi_config_script_s
 
 typedef struct mod_cgi_config_s
 {
-	char *docroot;
+	string_t docroot;
 	htaccess_t htaccess;
 	mod_cgi_config_script_t *scripts;
 	const char **env;
