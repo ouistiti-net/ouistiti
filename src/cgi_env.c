@@ -67,8 +67,8 @@ size_t env_gatewayinterface(const mod_cgi_config_t *UNUSED(config), http_message
 
 size_t env_docroot(const mod_cgi_config_t *config, http_message_t *request, const char *UNUSED(cgi_path), const char **value)
 {
-	*value = config->docroot;
-	return -1;
+	*value = config->docroot.data;
+	return config->docroot.length;
 }
 
 size_t env_serversoftware(const mod_cgi_config_t *UNUSED(config), http_message_t *request, const char *UNUSED(cgi_path), const char **value)
@@ -444,6 +444,7 @@ char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, str
 	int j = 0;
 	for (i = 0; i < nbenvs; i++)
 	{
+		int adddocroot = 0;
 		int options = cgi_env[i].options;
 		size_t length = cgi_env[i].target.length + cgi_env[i].length;
 		env[i] = (char *)calloc(1, length + 1);
@@ -452,11 +453,24 @@ char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, str
 		switch (cgi_env[i].id)
 		{
 			case SCRIPT_NAME:
+				if (cgi_path)
+				{
+					value = cgi_path->data;
+					valuelength = (int)cgi_path->length;
+					if (strstr(cgi_path->data, config->docroot.data) == cgi_path->data)
+					{
+						value += config->docroot.length;
+						valuelength -= (int)config->docroot.length;
+					}
+				}
+			break;
 			case SCRIPT_FILENAME:
 				if (cgi_path)
 				{
 					value = cgi_path->data;
 					valuelength = (int)cgi_path->length;
+					if (strstr(cgi_path->data, config->docroot.data) == NULL)
+						adddocroot = 1;
 				}
 			break;
 			case PATH_INFO:
@@ -482,7 +496,10 @@ char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, str
 		}
 		if (value != NULL)
 		{
-			snprintf(env[j], length + 1, "%s%.*s", cgi_env[i].target.data, valuelength, value);
+			if (adddocroot)
+				snprintf(env[j], length + 1, "%s%.*s/%.*s", cgi_env[i].target.data, (int)config->docroot.length, config->docroot.data, valuelength, value);
+			else
+				snprintf(env[j], length + 1, "%s%.*s", cgi_env[i].target.data, valuelength, value);
 			j++;
 		}
 	}
@@ -498,7 +515,13 @@ char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, str
 int cgienv_config(config_setting_t *configserver, config_setting_t *config, server_t *server, mod_cgi_config_t **modconfig, cgi_configscript_t configscript)
 {
 	mod_cgi_config_t *cgi = calloc(1, sizeof(*cgi));
-	config_setting_lookup_string(config, "docroot", (const char **)&cgi->docroot);
+	if (config_setting_lookup_string(config, "docroot", (const char **)&cgi->docroot.data) == CONFIG_FALSE)
+	{
+		free(cgi);
+		return EREJECT;
+	}
+
+	cgi->docroot.length = strlen(cgi->docroot.data);
 	htaccess_config(config, &cgi->htaccess);
 	if (configscript)
 	{

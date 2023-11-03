@@ -117,7 +117,7 @@ static int cgi_config(config_setting_t *iterator, server_t *server, int index, v
 #else
 static const mod_cgi_config_t g_cgi_config =
 {
-	.docroot = "/srv/www""/cig-bin",
+	.docroot = STRING_DCL("/srv/www""/cig-bin"),
 	.htaccess = {
 		.denylast = "*",
 		.allow = "*.cgi*",
@@ -138,10 +138,10 @@ static void *mod_cgi_create(http_server_t *server, mod_cgi_config_t *modconfig)
 	if (!modconfig)
 		return NULL;
 
-	int rootfd = open(modconfig->docroot, O_PATH | O_DIRECTORY);
+	int rootfd = open(modconfig->docroot.data, O_PATH | O_DIRECTORY);
 	if (rootfd == -1)
 	{
-		err("cgi: %s access denied", modconfig->docroot);
+		err("cgi: %s access denied", modconfig->docroot.data);
 		return NULL;
 	}
 
@@ -269,7 +269,7 @@ static int _cgi_start(_mod_cgi_t *mod, http_message_t *request)
 	int ret = EREJECT;
 	const char *uri = NULL;
 	size_t urilen = httpmessage_REQUEST2(request,"uri", &uri);
-	if (urilen > 0 && config->docroot)
+	if (urilen > 0 && config->docroot.length > 0)
 	{
 		const char *path_info = NULL;
 		if (htaccess_check(&config->htaccess, uri, &path_info) != ESUCCESS)
