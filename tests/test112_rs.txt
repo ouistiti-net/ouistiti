@@ -1,15 +1,13 @@
 HTTP/1.1 200 OK
 X-Test: test
 Content-Type: text/plain
-Content-Length: 715
 
 Hello world http hello=world
 CONTENT_LENGTH => 14
 GATEWAY_INTERFACE => CGI/1.1
 PATH_INFO => 
 PATH_TRANSLATED => 
-SCRIPT_FILENAME => testpython.py
-SCRIPT_NAME => testpython.py
+SCRIPT_NAME => /testpython/__init__.py
 SERVER_NAME => www.ouistiti.net
 SERVER_PROTOCOL => HTTP/1.1
 SERVER_ADDR => 127.0.0.1

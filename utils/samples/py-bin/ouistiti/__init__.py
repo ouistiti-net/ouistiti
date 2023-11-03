@@ -1,6 +1,7 @@
 class HttpRequest:
 	META = {}
 	QUERY = {}
+	COOKIES = {}
 	_body = b""
 	method = "GET"
 
@@ -8,7 +9,6 @@ class HttpRequest:
 		pass
 
 	def _load(self):
-		self.method = self.META['REQUEST_METHOD'].upper()
 		self.content_type = self.META['CONTENT_TYPE']
 		self.QUERY = self.parse_query(self.META['QUERY_STRING'])
 
