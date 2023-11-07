@@ -1,4 +1,5 @@
 from ouistiti import HttpResponse, HttpRequest
+import sys
 #import os
 
 #os.environ.setdefault('DJANGO_SETTINGS_MODULE', "settings")
@@ -12,7 +13,6 @@ def index(request):
     message += '\n'
     message += request.body.decode("utf-8")
     response = HttpResponse(bytes(message , 'utf-8'), content_type="text/plain")
-    response["Content-Length"] = len(response.content)
     response["X-Test"] = "test"
     return response
 

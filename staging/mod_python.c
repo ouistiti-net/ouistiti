@@ -71,8 +71,10 @@ struct mod_python_ctx_s
 
 	PyObject *pyfunc;
 	PyObject *pyrequest;
+	PyObject *pyresponseclass;
 	PyObject *pyresult;
 	PyObject *pycontent;
+	PyObject *pyitcontent;
 	PyObject *pymodule;
 	ssize_t contentread;
 
@@ -234,34 +236,32 @@ static void _python_freectx(mod_python_ctx_t *ctx)
 	free(ctx);
 }
 
-static int _python_createPyRequest(mod_python_ctx_t *ctx, http_message_t *request, string_t *uri, string_t *path_info)
+static PyObject *_python_createPyRequest(PyObject *pymodule, const mod_python_config_t *config, http_message_t *request, string_t *uri, string_t *path_info)
 {
-	_mod_python_t *mod = ctx->mod;
-	const mod_python_config_t *config = mod->config;
+	PyObject *pyrequest = NULL;
 
-	PyObject *pymodulefile = PyObject_GetAttrString(ctx->pymodule, "__file__");
+	PyObject *pyrequestclass = PyObject_GetAttrString(pymodule, "HttpRequest");
+	if (pyrequestclass == NULL || !PyCallable_Check(pyrequestclass))
+	{
+		warn("python: script bad syntax HttpRequest not available");
+		PyErr_Print();
+		return NULL;
+	}
+	pyrequest = PyObject_CallObject(pyrequestclass, NULL);
+	Py_DECREF(pyrequestclass);
+	if (pyrequest == NULL)
+	{
+		warn("python: script bad syntax HttpRequest not available");
+		PyErr_Print();
+		return NULL;
+	}
+	PyObject *pymodulefile = PyObject_GetAttrString(pymodule, "__file__");
 	PyObject *pylatin1value = PyUnicode_AsLatin1String(pymodulefile);
 	if (pylatin1value)
 	{
 		uri->data = PyBytes_AsString(pylatin1value);
 		dbg("module file %s", uri->data);
 		uri->length = strlen(uri->data);
-	}
-
-	PyObject *pyrequestclass = PyObject_GetAttrString(ctx->pymodule, "HttpRequest");
-	if (pyrequestclass == NULL || !PyCallable_Check(pyrequestclass))
-	{
-		warn("python: script bad syntax HttpRequest not available");
-		PyErr_Print();
-		return ESUCCESS;
-	}
-	ctx->pyrequest = PyObject_CallObject(pyrequestclass, NULL);
-	Py_DECREF(pyrequestclass);
-	if (ctx->pyrequest == NULL)
-	{
-		warn("python: script bad syntax HttpRequest not available");
-		PyErr_Print();
-		return ESUCCESS;
 	}
 	char **env = (char **)cgi_buildenv(config, request, uri, path_info);
 	int count = 0;
@@ -281,21 +281,23 @@ static int _python_createPyRequest(mod_python_ctx_t *ctx, http_message_t *reques
 			key = PyUnicode_FromString(env[count]);
 		PyDict_SetItem(pyenv, key, value);
 	}
-	PyObject_SetAttrString(ctx->pyrequest, "META", pyenv);
+	PyObject_SetAttrString(pyrequest, "META", pyenv);
 	Py_DECREF(pyenv);
-	PyObject *pyrequestfunc = PyObject_GetAttrString(ctx->pyrequest, "_load");
+
+	PyObject *pyrequestfunc = PyObject_GetAttrString(pyrequest, "_load");
 	if (pyrequestfunc && PyCallable_Check(pyrequestfunc))
 	{
 		PyObject_CallNoArgs(pyrequestfunc);
 		Py_DECREF(pyrequestfunc);
 	}
-	return EINCOMPLETE;
+	Py_DECREF(pylatin1value);
+	Py_DECREF(pymodulefile);
+	return pyrequest;
 }
 
 static int _python_start(_mod_python_t *mod, http_message_t *request, http_message_t *response)
 {
 	const mod_python_config_t *config = mod->config;
-	int ret = EREJECT;
 	string_t uri = {0};
 	uri.length = httpmessage_REQUEST2(request,"uri", &uri.data);
 	if (uri.data && config->docroot.length > 0)
@@ -351,6 +353,7 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 		{
 			pymodule = _mod_python_modulize(uri.data, uri.length);
 		}
+
 		PyObject *pyfunc = NULL;
 		if (pymodule != NULL)
 		{
@@ -361,6 +364,35 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 			httpmessage_result(response, RESULT_403);
 			err("python: unable to instanciate %s", function);
 			PyErr_Print();
+			Py_DECREF(pymodule);
+			return ESUCCESS;
+		}
+		PyObject *pyresponseclass = NULL;
+#if 1
+		/*
+		 * the HttpResponse attribute must be call here in some cases.
+		 * In all cases this code may run, but it should be useless.
+		 */
+		pyresponseclass = PyObject_GetAttrString(pymodule, "HttpResponse");
+		if (pyresponseclass == NULL || !PyCallable_Check(pyresponseclass))
+		{
+			err("python: script bad syntax HttpRequest not available");
+			httpmessage_result(response, RESULT_403);
+			PyErr_Print();
+			Py_DECREF(pyfunc);
+			Py_DECREF(pymodule);
+			return ESUCCESS;
+		}
+#endif
+		PyObject *pyrequest = _python_createPyRequest(pymodule, config, request, &uri, NULL);
+		if (pyrequest == NULL)
+		{
+			err("python: script bad syntax HttpRequest not available");
+			httpmessage_result(response, RESULT_403);
+			PyErr_Print();
+			Py_DECREF(pyresponseclass);
+			Py_DECREF(pyfunc);
+			Py_DECREF(pymodule);
 			return ESUCCESS;
 		}
 
@@ -369,17 +401,12 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 		ctx->mod = mod;
 		ctx->pymodule = pymodule;
 		ctx->pyfunc = pyfunc;
+		ctx->pyresponseclass = pyresponseclass;
+		ctx->pyrequest = pyrequest;
 		ctx->pycontent = NULL;
-		ret = _python_createPyRequest(ctx, request, &uri, NULL);
-		if (ret == ESUCCESS) //this an error
-		{
-			httpmessage_result(response, RESULT_500);
-			free(ctx);
-		}
-		else
-			httpmessage_private(request, ctx);
+		httpmessage_private(request, ctx);
 	}
-	return ret;
+	return EINCOMPLETE;
 }
 
 static int _python_request(mod_python_ctx_t *ctx, http_message_t *request)
@@ -435,35 +462,28 @@ static void _python_is(const char * name,PyObject *obj)
 
 static int _python_run(mod_python_ctx_t *ctx)
 {
-	int ret = ECONTINUE;
+	int ret = EINCOMPLETE;
 
 	if (ctx->pycontent)
 	{
 		PyObject_SetAttrString(ctx->pyrequest, "_body", ctx->pycontent);
 	}
-#if 1
-	/*
-	 * the HttpResponse attribute must be call here in some cases.
-	 * In all cases this code may run, but it should be useless.
-	 */
-	PyObject *pyresponseclass = PyObject_GetAttrString(ctx->pymodule, "HttpResponse");
-	if (pyresponseclass == NULL || !PyCallable_Check(pyresponseclass))
-	{
-		warn("python: script bad syntax HttpRequest not available");
-		PyErr_Print();
-		return ESUCCESS;
-	}
-#endif
-
 	ctx->pyresult = PyObject_CallFunctionObjArgs(ctx->pyfunc, ctx->pyrequest, NULL);
-	if (ctx->pyresult == NULL)
-		PyErr_Print();
 	if (ctx->pycontent)
 		Py_DECREF(ctx->pycontent);
 	ctx->pycontent = NULL;
-	if (ctx->pyrequest)
-		Py_DECREF(ctx->pyrequest);
-	ctx->pyrequest = NULL;
+
+	if (ctx->pyresult == NULL)
+		PyErr_Print();
+	else
+	{
+		PyObject *pyresultfunc = PyObject_GetAttrString(ctx->pyresult, "close");
+		if (pyresultfunc && PyCallable_Check(pyresultfunc))
+		{
+			PyObject_CallNoArgs(pyresultfunc);
+			Py_DECREF(pyresultfunc);
+		}
+	}
 	ctx->state = STATE_INFINISH;
 
 	return ret;
@@ -475,6 +495,7 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 
 	if (ctx->pyresult)
 	{
+		ctx->pycontent = NULL;
 		PyObject *pystatus = PyObject_GetAttrString(ctx->pyresult, "status_code");
 		if (pystatus != NULL)
 		{
@@ -482,7 +503,7 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 			Py_DECREF(pystatus);
 		}
 		char *mime = NULL;
-		Py_ssize_t length = 0;
+		Py_ssize_t length = -1;
 		if (PyMapping_Check(ctx->pyresult))
 		{
 			PyObject *pyheaders = PyMapping_Items(ctx->pyresult);
@@ -490,10 +511,10 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 			{
 				PyObject *pyheader = PyList_GetItem(pyheaders, i);
 				PyObject *pykey = PyTuple_GetItem(pyheader, 0);
-				PyObject *pyvalue = PyTuple_GetItem(pyheader, 1);
+				PyObject *pyvalue = PyObject_GetItem(ctx->pyresult, pykey);
 				PyObject *pyasciikey = PyUnicode_AsASCIIString(pykey);
-				PyObject *pylatin1value = PyUnicode_AsLatin1String(pyvalue);
 				const char *key = PyBytes_AsString(pyasciikey);
+				PyObject *pylatin1value = PyUnicode_AsLatin1String(pyvalue);
 				const char *value = PyBytes_AsString(pylatin1value);
 				python_dbg("python: header %s: %s", key, value);
 				if (key && value && strcmp(key, str_contenttype) && strcmp(key, str_contentlength))
@@ -519,11 +540,7 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 		else
 			ctx->pycontent = pycontentfunc;
 
-		if (length == 0)
-		{
-			char *content = NULL;
-			PyBytes_AsStringAndSize(ctx->pycontent, &content, &length);
-		}
+		ctx->pyitcontent = PyObject_GetIter(ctx->pycontent);
 
 		httpmessage_addcontent(response, mime, NULL, length);
 
@@ -542,12 +559,19 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 static int _python_responsecontent(mod_python_ctx_t *ctx, http_message_t *response)
 {
 	int ret = ECONTINUE;
+	PyObject *item = NULL;
 
-	if (ctx->pycontent != NULL)
+	if (ctx->pycontent == NULL && ctx->pyitcontent != NULL)
 	{
-		Py_ssize_t size = 0;
+		ctx->pycontent = PyIter_Next(ctx->pyitcontent);
+	}
+	item = ctx->pycontent;
+
+	Py_ssize_t size = 0;
+	if (item != NULL)
+	{
 		char *content = NULL;
-		PyBytes_AsStringAndSize(ctx->pycontent, &content, &size);
+		PyBytes_AsStringAndSize(item, &content, &size);
 		python_dbg("python: content %s", content);
 		if (content != NULL)
 		{
@@ -555,9 +579,13 @@ static int _python_responsecontent(mod_python_ctx_t *ctx, http_message_t *respon
 		}
 		if (ctx->contentread >= size)
 		{
-			ctx->state = STATE_OUTFINISH;
+			Py_DECREF(ctx->pycontent);
+			ctx->pycontent = NULL;
+			ctx->contentread = 0;
 		}
 	}
+	else
+		ctx->state = STATE_OUTFINISH;
 	return ret;
 }
 static int _python_connector(void *arg, http_message_t *request, http_message_t *response)
@@ -581,11 +609,14 @@ static int _python_connector(void *arg, http_message_t *request, http_message_t 
 			/**
 			 * Read the request. The connector is still EINCOMPLETE
 			 */
-		break;
-		case STATE_RUN:
-			ret = _python_run(ctx);
+			if (ret != EINCOMPLETE)
+				break;
 //		break;
-//		case STATE_INFINISH:
+//		case STATE_RUN:
+			if ((ctx->state & STATE_MASK) == STATE_RUN)
+				ret = _python_run(ctx);
+		break;
+		case STATE_INFINISH:
 			ret = _python_responseheader(ctx, response);
 		break;
 		case STATE_HEADERCOMPLETE:

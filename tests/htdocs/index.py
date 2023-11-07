@@ -6,7 +6,7 @@ from ouistiti import HttpResponse, HttpRequest
 
 def index(request):
 	response = HttpResponse(bytes("Hello world " + request.scheme + " " + request.META["QUERY_STRING"] + "\n", 'utf-8'), content_type="text/plain")
-	response["Content-Length"] = len(response.content)
+	response["Content-Length"]
 	response["X-Test"] = "test"
 	return response
 
