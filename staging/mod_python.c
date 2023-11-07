@@ -158,8 +158,14 @@ static PyObject *_mod_python_modulize(const char *uri, size_t urilen)
 	Py_DECREF(script_name);
 	PyObject *module_name = PyUnicode_Replace(script2_name, PyUnicode_FromString("/"), PyUnicode_FromString("."), -1);
 	Py_DECREF(script2_name);
-	//PyObject *pymodule = PyImport_Import(module_name);
-	PyObject *pymodule = PyImport_ImportModuleLevelObject(module_name, NULL, NULL, NULL, 0);
+	
+	PyObject *pymodule = PyImport_GetModule(module_name);
+	if (pymodule == NULL)
+	{
+		pymodule = PyImport_ImportModuleLevelObject(module_name, NULL, NULL, NULL, 0);
+	}
+	pymodule = PyImport_ReloadModule(pymodule);
+	Py_DECREF(pymodule);
 	Py_DECREF(module_name);
 	if (pymodule == NULL)
 	{
@@ -191,7 +197,7 @@ static void *mod_python_create(http_server_t *server, mod_python_config_t *modco
 	PyObject *sys = PyImport_ImportModule("sys");
 	PyObject *path = PyObject_GetAttrString(sys, "path");
 	PyObject *pwd = PyUnicode_FromString(modconfig->docroot.data);
-	PyList_Append(path, pwd);
+	PyList_Insert(path, 0, pwd);
 	Py_DECREF(sys);
 	Py_DECREF(path);
 	Py_DECREF(pwd);
@@ -233,6 +239,22 @@ static void mod_python_destroy(void *arg)
 
 static void _python_freectx(mod_python_ctx_t *ctx)
 {
+	if (ctx->pyitcontent)
+		Py_DECREF(ctx->pyitcontent);
+	if (ctx->pycontent)
+		Py_DECREF(ctx->pycontent);
+	if (ctx->pyresult)
+		Py_DECREF(ctx->pyresult);
+	if (ctx->pyrequest)
+		Py_DECREF(ctx->pyrequest);
+	if (ctx->pyresponseclass)
+		Py_DECREF(ctx->pyresponseclass);
+#if 0
+	if (ctx->pyfunc)
+		Py_DECREF(ctx->pyfunc);
+#endif
+	if (ctx->pymodule)
+		Py_DECREF(ctx->pymodule);
 	free(ctx);
 }
 
@@ -257,12 +279,14 @@ static PyObject *_python_createPyRequest(PyObject *pymodule, const mod_python_co
 	}
 	PyObject *pymodulefile = PyObject_GetAttrString(pymodule, "__file__");
 	PyObject *pylatin1value = PyUnicode_AsLatin1String(pymodulefile);
+	Py_DECREF(pymodulefile);
 	if (pylatin1value)
 	{
 		uri->data = PyBytes_AsString(pylatin1value);
 		dbg("module file %s", uri->data);
 		uri->length = strlen(uri->data);
 	}
+
 	char **env = (char **)cgi_buildenv(config, request, uri, path_info);
 	int count = 0;
 	PyObject *pyenv = PyDict_New();
@@ -273,16 +297,21 @@ static PyObject *_python_createPyRequest(PyObject *pymodule, const mod_python_co
 		char *separator = strchr(env[count], '=');
 		if (separator != NULL)
 		{
-			*separator = '\0';
-			key = PyUnicode_FromStringAndSize(env[count], separator - env[count]);
 			value = PyUnicode_FromString(separator + 1);
+			//*separator = 0;
+			//key = PyUnicode_FromString(env[count]);
+			key = PyUnicode_FromStringAndSize(env[count], separator - env[count]);
 		}
 		else
 			key = PyUnicode_FromString(env[count]);
 		PyDict_SetItem(pyenv, key, value);
+		Py_DECREF(key);
+		if (value)
+			Py_DECREF(value);
 	}
 	PyObject_SetAttrString(pyrequest, "META", pyenv);
 	Py_DECREF(pyenv);
+	Py_DECREF(pylatin1value);
 
 	PyObject *pyrequestfunc = PyObject_GetAttrString(pyrequest, "_load");
 	if (pyrequestfunc && PyCallable_Check(pyrequestfunc))
@@ -290,8 +319,6 @@ static PyObject *_python_createPyRequest(PyObject *pymodule, const mod_python_co
 		PyObject_CallNoArgs(pyrequestfunc);
 		Py_DECREF(pyrequestfunc);
 	}
-	Py_DECREF(pylatin1value);
-	Py_DECREF(pymodulefile);
 	return pyrequest;
 }
 
@@ -345,6 +372,7 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 			if (((size_t)uri.length == script->path.length) && !_string_cmp(&script->path, uri.data, uri.length))
 			{
 				pymodule = script->pymodule;
+				Py_INCREF(pymodule);
 				break;
 			}
 			script = script->next;
@@ -452,6 +480,7 @@ static void _python_is(const char * name,PyObject *obj)
 		dbg("\tis Tuple %d", PyTuple_Check(obj));
 		dbg("\tis Unicode %d", PyUnicode_Check(obj));
 		dbg("\tis Callable %d", PyCallable_Check(obj));
+		dbg("\tis Iterator %d", PyIter_Check(obj));
 	}
 	else
 	{
@@ -633,10 +662,6 @@ static int _python_connector(void *arg, http_message_t *request, http_message_t 
 		}
 		break;
 		case STATE_END:
-			if (ctx->pycontent)
-				Py_DECREF(ctx->pycontent);
-			if (ctx->pyresult)
-				Py_DECREF(ctx->pyresult);
 			_python_freectx(ctx);
 			httpmessage_private(request, NULL);
 			ret = ESUCCESS;

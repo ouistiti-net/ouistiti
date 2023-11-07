@@ -130,6 +130,9 @@ class HttpResponse:
     def __iter__(self):
         return iter(self._headers)
 
+    def __len__(self):
+        return len(self._headers)
+
     @property
     def content(self):
         #print("hello " + str(self._container), file=sys.stderr)
