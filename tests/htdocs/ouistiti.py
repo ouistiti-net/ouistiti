@@ -19,7 +19,7 @@ class HttpRequest:
     def parse_query(self, string):
         entries = string.split("&")
         return dict(s.split('=') for s in entries)
-     
+
     @property
     def scheme(self):
         if self.is_secure():
@@ -68,6 +68,7 @@ class HttpResponse:
     def __init__(self, content = None, content_type = 'text/plain', status = 200, charset = "utf-8"):
         self._charset = charset
         self._headers = {}
+        self.content_type = content_type
         self["Content-Type"] = content_type
         if content and len(content) > 0:
             self.content = content
@@ -79,61 +80,32 @@ class HttpResponse:
         self.closed = True
 
     def __setitem__(self, header, value):
-        if header.lower() == "content-length" and self.closed:
-            return
-        if header.lower() == "location":
-            self.status_code = 302
-        if isinstance(value, str):
-            value.encode("latin-1")
-        elif isinstance(header, bytes):
-            value = value.decode("latin-1")
-        else:
-            value = str(value)
-        if isinstance(header, bytes):
-            key = header.decode("ascii")
-        elif isinstance(header, str):
-            header.encode("ascii")
-            key = header
-        self._headers[header.lower()] = (key, value)
+        self._headers[header] = value
 
     def __delitem__(self, header):
-        self._headers.pop(header.lower(), False)
+        del self._headers[header]
 
     def __getitem__(self, header):
-        if header.lower() == "content-length" and not self.closed and len(self._container) > 0:
-            self.__delitem__(header)
-            content_length = 0
-            for contentpart in self._container:
-                content_length += len(contentpart)
-            self.__setitem__(header, str(content_length))
-            self.closed = True
-        if header.lower() in self._headers:
-            return self._headers[header.lower()][1]
-        else:
-            print("item " + str(header) + " not found", file=sys.stderr)
-            return ""
+        return self._headers[header]
 
     def __missing__(self, key):
         return ""
 
     def has_header(self, header):
-        return header.lower() in self._headers
+        return header in self._headers
 
     __contains__ = has_header
 
     def items(self):
-        return self._headers.values()
+       return self._headers.items()
 
     def get(self, header, alternate=None):
         return self._headers.get(header.lower(), (None, alternate))[1]
 
-    def __iter__(self):
-        return iter(self._headers)
-
     @property
     def content(self):
         #print("hello " + str(self._container), file=sys.stderr)
-        return self._container
+        return b"".join(self._container)
 
     @content.setter
     def content(self, value):
@@ -142,4 +114,10 @@ class HttpResponse:
         elif isinstance(value, bytes):
             content = value
         self._container = [content]
+
+    def __iter__(self):
+        return iter(self._container)
+
+    def __len__(self):
+        return len(self._container)
 

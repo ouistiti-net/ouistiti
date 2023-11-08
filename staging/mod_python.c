@@ -54,7 +54,36 @@
 #include "ouistiti/log.h"
 #include "mod_cgi.h"
 
-#define python_dbg(...)
+#define python_dbg dbg
+
+#if 0
+static void _python_is(const char * name,PyObject *obj)
+{
+	dbg("%s", name);
+	if (obj)
+	{
+		dbg("\tis Bytes %d", PyBytes_Check(obj));
+		dbg("\tis Dict %d", PyDict_Check(obj));
+		dbg("\tis Index %d", PyIndex_Check(obj));
+		dbg("\tis Mapping %d", PyMapping_Check(obj));
+		dbg("\tis List %d", PyList_Check(obj));
+		dbg("\tis Tuple %d", PyTuple_Check(obj));
+		dbg("\tis Unicode %d", PyUnicode_Check(obj));
+		dbg("\tis Callable %d", PyCallable_Check(obj));
+		dbg("\tis Iterator %d", PyIter_Check(obj));
+		PyObject *pyrepr = PyObject_Str(obj);
+		PyObject *pyasciirepr = PyUnicode_AsASCIIString(pyrepr);
+		const char *repr = PyBytes_AsString(pyasciirepr);
+		dbg("%s", repr);
+		Py_DECREF(pyasciirepr);
+		Py_DECREF(pyrepr);
+	}
+	else
+	{
+		dbg("\tis null");
+	}
+}
+#endif
 
 static const char str_python[] = "python";
 
@@ -68,10 +97,10 @@ struct mod_python_ctx_s
 {
 	_mod_python_t *mod;
 	http_client_t *ctl;
+	const char *function;
 
-	PyObject *pyfunc;
+	PyObject *pysettings;
 	PyObject *pyrequest;
-	PyObject *pyresponseclass;
 	PyObject *pyresult;
 	PyObject *pycontent;
 	PyObject *pyitcontent;
@@ -162,10 +191,13 @@ static PyObject *_mod_python_modulize(const char *uri, size_t urilen)
 	PyObject *pymodule = PyImport_GetModule(module_name);
 	if (pymodule == NULL)
 	{
-		pymodule = PyImport_ImportModuleLevelObject(module_name, NULL, NULL, NULL, 0);
+		pymodule = PyImport_Import(module_name);
+//		pymodule = PyImport_ImportModuleLevelObject(module_name, NULL, NULL, NULL, 0);
 	}
+#if 0
 	pymodule = PyImport_ReloadModule(pymodule);
 	Py_DECREF(pymodule);
+#endif
 	Py_DECREF(module_name);
 	if (pymodule == NULL)
 	{
@@ -247,12 +279,6 @@ static void _python_freectx(mod_python_ctx_t *ctx)
 		Py_DECREF(ctx->pyresult);
 	if (ctx->pyrequest)
 		Py_DECREF(ctx->pyrequest);
-	if (ctx->pyresponseclass)
-		Py_DECREF(ctx->pyresponseclass);
-#if 0
-	if (ctx->pyfunc)
-		Py_DECREF(ctx->pyfunc);
-#endif
 	if (ctx->pymodule)
 		Py_DECREF(ctx->pymodule);
 	free(ctx);
@@ -279,11 +305,10 @@ static PyObject *_python_createPyRequest(PyObject *pymodule, const mod_python_co
 	}
 	PyObject *pymodulefile = PyObject_GetAttrString(pymodule, "__file__");
 	PyObject *pylatin1value = PyUnicode_AsLatin1String(pymodulefile);
-	Py_DECREF(pymodulefile);
 	if (pylatin1value)
 	{
 		uri->data = PyBytes_AsString(pylatin1value);
-		dbg("module file %s", uri->data);
+		python_dbg("python: module file %s", uri->data);
 		uri->length = strlen(uri->data);
 	}
 
@@ -292,25 +317,28 @@ static PyObject *_python_createPyRequest(PyObject *pymodule, const mod_python_co
 	PyObject *pyenv = PyDict_New();
 	for (;env[count] != NULL; count++)
 	{
-		PyObject *key = NULL;
-		PyObject *value = NULL;
+		PyObject *pikey = NULL;
+		PyObject *pivalue = NULL;
 		char *separator = strchr(env[count], '=');
 		if (separator != NULL)
 		{
-			value = PyUnicode_FromString(separator + 1);
+			pivalue = PyUnicode_FromString(separator + 1);
 			//*separator = 0;
 			//key = PyUnicode_FromString(env[count]);
-			key = PyUnicode_FromStringAndSize(env[count], separator - env[count]);
+			pikey = PyUnicode_FromStringAndSize(env[count], separator - env[count]);
 		}
 		else
-			key = PyUnicode_FromString(env[count]);
-		PyDict_SetItem(pyenv, key, value);
-		Py_DECREF(key);
-		if (value)
-			Py_DECREF(value);
+			pikey = PyUnicode_FromString(env[count]);
+		PyDict_SetItem(pyenv, pikey, pivalue);
+		Py_DECREF(pikey);
+		if (pivalue)
+			Py_DECREF(pivalue);
+		free(env[count]);
 	}
+	free(env);
 	PyObject_SetAttrString(pyrequest, "META", pyenv);
 	Py_DECREF(pyenv);
+	Py_DECREF(pymodulefile);
 	Py_DECREF(pylatin1value);
 
 	PyObject *pyrequestfunc = PyObject_GetAttrString(pyrequest, "_load");
@@ -381,37 +409,24 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 		{
 			pymodule = _mod_python_modulize(uri.data, uri.length);
 		}
+		if (pymodule == NULL)
+		{
+			httpmessage_result(response, RESULT_403);
+			PyErr_Print();
+			return ESUCCESS;
+		}
 
-		PyObject *pyfunc = NULL;
-		if (pymodule != NULL)
+		PyObject *pysettings = PyObject_GetAttrString(pymodule, "settings");
+		PyObject *pysettingsclass = NULL;
+		if (pysettings)
+			pysettingsclass = PyObject_GetAttrString(pymodule, "Settings");
+		if (pysettingsclass != NULL && !PyCallable_Check(pysettingsclass))
 		{
-			pyfunc = PyObject_GetAttrString(pymodule, function);
+			pysettings = PyObject_CallObject(pysettingsclass, NULL);
+			Py_DECREF(pysettingsclass);
 		}
-		if (!pyfunc || !PyCallable_Check(pyfunc))
-		{
-			httpmessage_result(response, RESULT_403);
-			err("python: unable to instanciate %s", function);
-			PyErr_Print();
-			Py_DECREF(pymodule);
-			return ESUCCESS;
-		}
+
 		PyObject *pyresponseclass = NULL;
-#if 1
-		/*
-		 * the HttpResponse attribute must be call here in some cases.
-		 * In all cases this code may run, but it should be useless.
-		 */
-		pyresponseclass = PyObject_GetAttrString(pymodule, "HttpResponse");
-		if (pyresponseclass == NULL || !PyCallable_Check(pyresponseclass))
-		{
-			err("python: script bad syntax HttpRequest not available");
-			httpmessage_result(response, RESULT_403);
-			PyErr_Print();
-			Py_DECREF(pyfunc);
-			Py_DECREF(pymodule);
-			return ESUCCESS;
-		}
-#endif
 		PyObject *pyrequest = _python_createPyRequest(pymodule, config, request, &uri, NULL);
 		if (pyrequest == NULL)
 		{
@@ -419,7 +434,6 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 			httpmessage_result(response, RESULT_403);
 			PyErr_Print();
 			Py_DECREF(pyresponseclass);
-			Py_DECREF(pyfunc);
 			Py_DECREF(pymodule);
 			return ESUCCESS;
 		}
@@ -427,9 +441,9 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 		mod_python_ctx_t *ctx;
 		ctx = calloc(1, sizeof(*ctx));
 		ctx->mod = mod;
+		ctx->pysettings = pysettings;
 		ctx->pymodule = pymodule;
-		ctx->pyfunc = pyfunc;
-		ctx->pyresponseclass = pyresponseclass;
+		ctx->function = function;
 		ctx->pyrequest = pyrequest;
 		ctx->pycontent = NULL;
 		httpmessage_private(request, ctx);
@@ -456,7 +470,7 @@ static int _python_request(mod_python_ctx_t *ctx, http_message_t *request)
 			ctx->pycontent = pychunk;
 		else
 		{
-			PyBytes_Concat(&ctx->pycontent, pychunk);
+			PyBytes_ConcatAndDel(&ctx->pycontent, pychunk);
 		}
 	}
 	if (inputlen != EINCOMPLETE && rest == 0)
@@ -466,29 +480,6 @@ static int _python_request(mod_python_ctx_t *ctx, http_message_t *request)
 	return EINCOMPLETE;
 }
 
-#if 0
-static void _python_is(const char * name,PyObject *obj)
-{
-	dbg("%s", name);
-	if (obj)
-	{
-		dbg("\tis Bytes %d", PyBytes_Check(obj));
-		dbg("\tis Dict %d", PyDict_Check(obj));
-		dbg("\tis Index %d", PyIndex_Check(obj));
-		dbg("\tis Mapping %d", PyMapping_Check(obj));
-		dbg("\tis List %d", PyList_Check(obj));
-		dbg("\tis Tuple %d", PyTuple_Check(obj));
-		dbg("\tis Unicode %d", PyUnicode_Check(obj));
-		dbg("\tis Callable %d", PyCallable_Check(obj));
-		dbg("\tis Iterator %d", PyIter_Check(obj));
-	}
-	else
-	{
-		dbg("\tis null");
-	}
-}
-#endif
-
 static int _python_run(mod_python_ctx_t *ctx)
 {
 	int ret = EINCOMPLETE;
@@ -497,11 +488,24 @@ static int _python_run(mod_python_ctx_t *ctx)
 	{
 		PyObject_SetAttrString(ctx->pyrequest, "_body", ctx->pycontent);
 	}
-	ctx->pyresult = PyObject_CallFunctionObjArgs(ctx->pyfunc, ctx->pyrequest, NULL);
+
+	PyObject *pyfunc = PyObject_GetAttrString(ctx->pymodule, ctx->function);
+	if (pyfunc && PyCallable_Check(pyfunc))
+	{
+		ctx->pyresult = PyObject_CallFunctionObjArgs(pyfunc, ctx->pyrequest, NULL);
+		Py_DECREF(pyfunc);
+	}
+	else
+	{
+		err("python: function %s not found", ctx->function);
+		PyErr_Print();
+		ret = ESUCCESS;
+	}
 	if (ctx->pycontent)
 		Py_DECREF(ctx->pycontent);
 	ctx->pycontent = NULL;
 
+				PyErr_Print();
 	if (ctx->pyresult == NULL)
 		PyErr_Print();
 	else
@@ -509,8 +513,9 @@ static int _python_run(mod_python_ctx_t *ctx)
 		PyObject *pyresultfunc = PyObject_GetAttrString(ctx->pyresult, "close");
 		if (pyresultfunc && PyCallable_Check(pyresultfunc))
 		{
-			PyObject_CallNoArgs(pyresultfunc);
+			PyObject_CallMethodNoArgs(ctx->pyresult, pyresultfunc);
 			Py_DECREF(pyresultfunc);
+			PyErr_Clear();
 		}
 	}
 	ctx->state = STATE_INFINISH;
@@ -536,15 +541,38 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 		if (PyMapping_Check(ctx->pyresult))
 		{
 			PyObject *pyheaders = PyMapping_Items(ctx->pyresult);
-			for (int i = 0; i < PyList_Size(pyheaders); i++)
+			if (pyheaders == NULL)
 			{
-				PyObject *pyheader = PyList_GetItem(pyheaders, i);
-				PyObject *pykey = PyTuple_GetItem(pyheader, 0);
-				PyObject *pyvalue = PyObject_GetItem(ctx->pyresult, pykey);
+				PyObject *pyresultfunc = PyObject_GetAttrString(ctx->pyresult, "items");
+				if (pyresultfunc && PyCallable_Check(pyresultfunc))
+				{
+					pyheaders = PyObject_CallMethodNoArgs(ctx->pyresult, pyresultfunc);
+					Py_DECREF(pyresultfunc);
+				}
+			}
+			PyObject *pyitems = NULL;
+			if (pyheaders == NULL)
+			{
+				pyheaders = PyObject_GetAttrString(ctx->pyresult, "headers");
+				if (pyheaders != NULL)
+					pyitems = PyMapping_Items(pyheaders);
+			}
+			else
+				pyitems = pyheaders;
+			for (int i = 0; pyitems && i < PyList_Size(pyitems); i++)
+			{
+				PyObject *pyheader = PyList_GetItem(pyitems, i);
+
+				PyObject *pykey = NULL;
+				pykey = PyTuple_GetItem(pyheader, 0);
 				PyObject *pyasciikey = PyUnicode_AsASCIIString(pykey);
 				const char *key = PyBytes_AsString(pyasciikey);
+
+				//PyObject *pyvalue = PyObject_GetItem(ctx->pyresult, pyheader);
+				PyObject *pyvalue = PyTuple_GetItem(pyheader, 1);
 				PyObject *pylatin1value = PyUnicode_AsLatin1String(pyvalue);
 				const char *value = PyBytes_AsString(pylatin1value);
+
 				python_dbg("python: header %s: %s", key, value);
 				if (key && value && strcmp(key, str_contenttype) && strcmp(key, str_contentlength))
 					httpmessage_addheader(response, key, value, -1);
@@ -552,24 +580,38 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 					mime = strdup(value);
 				else if (key && !strcmp(key, str_contentlength))
 					length = atol(value);
-				Py_DECREF(pyheader);
 				Py_DECREF(pyasciikey);
 				Py_DECREF(pylatin1value);
-				Py_DECREF(pykey);
 				Py_DECREF(pyvalue);
+				Py_DECREF(pykey);
+				Py_DECREF(pyheader);
 			}
-			Py_DECREF(pyheaders);
+			if (pyheaders)
+				Py_DECREF(pyheaders);
+		}
+		PyObject *pycontent_type = NULL;
+		if (mime == NULL)
+			pycontent_type = PyObject_GetAttrString(ctx->pyresult, "content_type");
+		if (pycontent_type != NULL)
+		{
+			PyObject *pyasciimime = PyUnicode_AsASCIIString(pycontent_type);
+			mime = strdup(PyBytes_AsString(pyasciimime));
+			Py_DECREF(pyasciimime);
+			Py_DECREF(pycontent_type);
 		}
 		PyObject *pycontentfunc = PyObject_GetAttrString(ctx->pyresult, "content");
 		if (pycontentfunc && PyCallable_Check(pycontentfunc))
 		{
-			ctx->pycontent = PyObject_CallNoArgs(pycontentfunc);
+			ctx->pycontent = PyObject_CallMethodNoArgs(ctx->pyresult, pycontentfunc);
 			Py_DECREF(pycontentfunc);
 		}
 		else
 			ctx->pycontent = pycontentfunc;
 
-		ctx->pyitcontent = PyObject_GetIter(ctx->pycontent);
+		if (ctx->pycontent)
+			ctx->pyitcontent = PyObject_GetIter(ctx->pycontent);
+		else
+			PyErr_Print();
 
 		httpmessage_addcontent(response, mime, NULL, length);
 
@@ -590,14 +632,16 @@ static int _python_responsecontent(mod_python_ctx_t *ctx, http_message_t *respon
 	int ret = ECONTINUE;
 	PyObject *item = NULL;
 
+
 	if (ctx->pycontent == NULL && ctx->pyitcontent != NULL)
 	{
 		ctx->pycontent = PyIter_Next(ctx->pyitcontent);
 	}
+
 	item = ctx->pycontent;
 
 	Py_ssize_t size = 0;
-	if (item != NULL)
+	if (item != NULL && PyBytes_Check(item))
 	{
 		char *content = NULL;
 		PyBytes_AsStringAndSize(item, &content, &size);
@@ -614,7 +658,11 @@ static int _python_responsecontent(mod_python_ctx_t *ctx, http_message_t *respon
 		}
 	}
 	else
+	{
+		if (item)
+			Py_DECREF(item);
 		ctx->state = STATE_OUTFINISH;
+	}
 	return ret;
 }
 static int _python_connector(void *arg, http_message_t *request, http_message_t *response)
@@ -644,6 +692,8 @@ static int _python_connector(void *arg, http_message_t *request, http_message_t 
 //		case STATE_RUN:
 			if ((ctx->state & STATE_MASK) == STATE_RUN)
 				ret = _python_run(ctx);
+			if (ret == ESUCCESS)
+				httpmessage_result(response, RESULT_403);
 		break;
 		case STATE_INFINISH:
 			ret = _python_responseheader(ctx, response);
