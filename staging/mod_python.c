@@ -311,8 +311,7 @@ static PyObject *_python_createPyRequest(PyObject *pymodule, const mod_python_co
 		python_dbg("python: module file %s", uri->data);
 		uri->length = strlen(uri->data);
 	}
-
-	char **env = (char **)cgi_buildenv(config, request, uri, path_info);
+	char **env = (char **)cgi_buildenv(config, request, uri, path_info, PyMem_Calloc);
 	int count = 0;
 	PyObject *pyenv = PyDict_New();
 	for (;env[count] != NULL; count++)
@@ -328,14 +327,16 @@ static PyObject *_python_createPyRequest(PyObject *pymodule, const mod_python_co
 			pikey = PyUnicode_FromStringAndSize(env[count], separator - env[count]);
 		}
 		else
+		{
 			pikey = PyUnicode_FromString(env[count]);
+			pivalue = Py_True;
+		}
 		PyDict_SetItem(pyenv, pikey, pivalue);
 		Py_DECREF(pikey);
-		if (pivalue)
-			Py_DECREF(pivalue);
-		free(env[count]);
+		Py_XDECREF(pivalue);
+		PyMem_Free(env[count]);
 	}
-	free(env);
+	PyMem_Free(env);
 	PyObject_SetAttrString(pyrequest, "META", pyenv);
 	Py_DECREF(pyenv);
 	Py_DECREF(pymodulefile);

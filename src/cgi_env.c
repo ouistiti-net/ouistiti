@@ -433,7 +433,7 @@ static const httpenv_t cgi_env[] =
 	}
 };
 
-static size_t _cgi_formatenv(const mod_cgi_config_t *config, unsigned char **env, const httpenv_t *cgi_env, const char *value, size_t valuelen, int adddocroot)
+static size_t _cgi_formatenv(const mod_cgi_config_t *config, unsigned char **env, const httpenv_t *cgi_env, const char *value, size_t valuelen, int adddocroot, calloc_t tcalloc)
 {
 	size_t length = 0;
 	if (env == NULL)
@@ -446,7 +446,7 @@ static size_t _cgi_formatenv(const mod_cgi_config_t *config, unsigned char **env
 	length = cgi_env->target.length + 1 + valuelen;
 	if (adddocroot)
 		length += config->docroot.length + 1;
-	*env = (unsigned char *)calloc(1, length + 1);
+	*env = (unsigned char *)tcalloc(1, length + 1);
 	if (adddocroot)
 		length = snprintf((char *)*env, length + 1, "%s=%.*s/%.*s", cgi_env->target.data, (int)config->docroot.length, config->docroot.data, (int)valuelen, value);
 	else
@@ -454,12 +454,12 @@ static size_t _cgi_formatenv(const mod_cgi_config_t *config, unsigned char **env
 	return length;
 }
 
-unsigned char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, string_t *cgi_path, string_t *path_info)
+unsigned char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, string_t *cgi_path, string_t *path_info, calloc_t tcalloc)
 {
 	unsigned char **env = NULL;
 	int nbenvs = sizeof(cgi_env) / sizeof(*cgi_env);
 
-	env = calloc(sizeof(unsigned char *), nbenvs + config->nbenvs + 1);
+	env = tcalloc(sizeof(unsigned char *), nbenvs + config->nbenvs + 1);
 
 	int i = 0;
 	int j = 0;
@@ -515,7 +515,7 @@ unsigned char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *req
 		}
 		if (value != NULL)
 		{
-			_cgi_formatenv(config, &env[j], &cgi_env[i], value, valuelength, adddocroot);
+			_cgi_formatenv(config, &env[j], &cgi_env[i], value, valuelength, adddocroot, tcalloc);
 			j++;
 		}
 	}
