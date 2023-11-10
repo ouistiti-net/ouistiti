@@ -43,6 +43,7 @@ typedef struct mod_cgi_config_script_s mod_cgi_config_script_t;
 struct mod_cgi_config_script_s
 {
 	string_t path;
+	string_t settings;
 	mod_cgi_config_script_t *next;
 };
 
