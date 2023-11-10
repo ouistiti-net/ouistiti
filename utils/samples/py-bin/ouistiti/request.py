@@ -7,7 +7,7 @@ from io import BytesIO
 from itertools import chain
 from ouistiti.utils import CaseInsensitiveMapping
 from ouistiti.utils import MultiValueDict
-from ouistiti import settings
+from ouistiti.conf import settings
 
 RAISE_ERROR = object()
 host_validation_re = re.compile(

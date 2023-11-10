@@ -180,7 +180,6 @@ class HttpResponseBase:
     __contains__ = has_header
 
     def items(self):
-        print(type(self.headers), file=sys.stderr)
         return self.headers.items()
 
     def get(self, header, alternate=None):
@@ -364,9 +363,6 @@ class HttpResponse(HttpResponseBase):
 
     __bytes__ = serialize
 
-    def items(self):
-        print(self.headers, file=sys.stderr)
-        return super().items()
 
     @property
     def content(self):

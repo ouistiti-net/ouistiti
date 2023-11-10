@@ -54,7 +54,7 @@
 #include "ouistiti/log.h"
 #include "mod_cgi.h"
 
-#define python_dbg dbg
+#define python_dbg(...)
 
 #define dbgmarkdown python_dbg("%s %d", __FILE__, __LINE__)
 
@@ -115,7 +115,6 @@ struct mod_python_ctx_s
 	http_client_t *ctl;
 	const char *function;
 
-	PyObject *pysettings;
 	PyObject *pyrequest;
 	PyObject *pyresult;
 	PyObject *pycontent;
@@ -352,11 +351,11 @@ static PyObject *_python_createPyRequest(PyObject *pymodule, const mod_python_co
 	Py_DECREF(pymodulefile);
 	Py_DECREF(pylatin1value);
 
-	PyObject *pyrequestfunc = PyObject_GetAttrString(pyrequest, "_load");
-	if (pyrequestfunc && PyCallable_Check(pyrequestfunc))
+	PyObject *pyloadfunc = PyObject_GetAttrString(pyrequest, "_load");
+	if (pyloadfunc && PyCallable_Check(pyloadfunc))
 	{
-		PyObject_CallMethodNoArgs(pyrequest, pyrequestfunc);
-		Py_DECREF(pyrequestfunc);
+		PyObject_CallNoArgs(pyloadfunc);
+		Py_DECREF(pyloadfunc);
 		if (PyErr_Occurred())
 			PyErr_Print();
 	}
@@ -431,13 +430,28 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 
 		PyObject *pysettings = PyObject_GetAttrString(pymodule, "settings");
 		PyObject *pysettingsclass = NULL;
-		if (pysettings)
+		if (pysettings == NULL || pysettings == Py_None)
 			pysettingsclass = PyObject_GetAttrString(pymodule, "Settings");
-		if (pysettingsclass != NULL && !PyCallable_Check(pysettingsclass))
+		if (pysettingsclass != NULL && PyCallable_Check(pysettingsclass))
 		{
 			pysettings = PyObject_CallObject(pysettingsclass, NULL);
 			Py_DECREF(pysettingsclass);
 		}
+		if (pysettings)
+		{
+			PyObject *pyconfigurefunc = PyObject_GetAttrString(pysettings, "configure");
+			if (pyconfigurefunc && PyCallable_Check(pyconfigurefunc))
+			{
+				PyObject *pynewsettings = PyModule_New("default_settings");
+				PyObject_CallOneArg(pyconfigurefunc, pynewsettings);
+				Py_DECREF(pyconfigurefunc);
+				Py_DECREF(pynewsettings);
+				if (PyErr_Occurred())
+					PyErr_Print();
+			}
+			Py_DECREF(pysettings);
+		}
+		PyErr_Clear();
 
 		PyObject *pyrequest = _python_createPyRequest(pymodule, config, request, &uri, NULL);
 		if (pyrequest == NULL)
@@ -452,7 +466,6 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 		mod_python_ctx_t *ctx;
 		ctx = calloc(1, sizeof(*ctx));
 		ctx->mod = mod;
-		ctx->pysettings = pysettings;
 		ctx->pymodule = pymodule;
 		ctx->function = function;
 		ctx->pyrequest = pyrequest;
@@ -525,7 +538,7 @@ static int _python_run(mod_python_ctx_t *ctx)
 		PyObject *pyresultfunc = PyObject_GetAttrString(ctx->pyresult, "close");
 		if (pyresultfunc && PyCallable_Check(pyresultfunc))
 		{
-			PyObject_CallMethodNoArgs(ctx->pyresult, pyresultfunc);
+			PyObject_CallNoArgs(pyresultfunc);
 			Py_DECREF(pyresultfunc);
 			PyErr_Clear();
 		}
@@ -559,7 +572,7 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 				PyObject *pyresultfunc = PyObject_GetAttrString(ctx->pyresult, "items");
 				if (pyresultfunc && PyCallable_Check(pyresultfunc))
 				{
-					pyheaders = PyObject_CallMethodNoArgs(ctx->pyresult, pyresultfunc);
+					pyheaders = PyObject_CallNoArgs(pyresultfunc);
 					Py_DECREF(pyresultfunc);
 				}
 			}
@@ -621,7 +634,7 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 		PyObject *pycontentfunc = PyObject_GetAttrString(ctx->pyresult, "content");
 		if (pycontentfunc && PyCallable_Check(pycontentfunc))
 		{
-			ctx->pycontent = PyObject_CallMethodNoArgs(ctx->pyresult, pycontentfunc);
+			ctx->pycontent = PyObject_CallNoArgs(pycontentfunc);
 			Py_DECREF(pycontentfunc);
 		}
 		else

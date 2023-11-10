@@ -1,14 +1,7 @@
-class Settings:
-	DEBUG = False
-	DATA_UPLOAD_MAX_NUMBER_FIELDS = 20
-	USE_X_FORWARDED_HOST = False
-	ALLOWED_HOSTS = None
-	SECURE_PROXY_SSL_HEADER = False
-	FILE_UPLOAD_HANDLERS = None
-	DATA_UPLOAD_MAX_MEMORY_SIZE = None
-	DEFAULT_CHARSET = "utf-8"
-
-settings = Settings()
+from ouistiti.conf import (
+    Settings,
+    settings,
+)
 
 from ouistiti.request import (
     HttpHeaders,
@@ -36,7 +29,8 @@ from ouistiti.response import (
 )
 
 __all__ = [
-    "SimpleCookie",
+    "Settings",
+    "settings",
     "parse_cookie",
     "HttpHeaders",
     "HttpRequest",

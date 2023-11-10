@@ -1,4 +1,7 @@
-from ouistiti import HttpResponse, HttpRequest
+from ouistiti import Settings
+from ouistiti import settings
+from ouistiti import HttpRequest
+from ouistiti import HttpResponse
 
 def echo(request):
 	content_type=""
