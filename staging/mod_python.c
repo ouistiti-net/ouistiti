@@ -102,6 +102,7 @@ static void _python_is(const char * name,PyObject *obj)
  * DECREF has not to be called if the refcount is 1, event if we use XDECREF
  */
 static const char str_python[] = "python";
+static const char str_settings_py[] = "settings.py";
 
 typedef struct mod_cgi_config_s mod_python_config_t;
 typedef struct _mod_python_s _mod_python_t;
@@ -223,6 +224,38 @@ static PyObject *_mod_python_modulize(const char *uri, size_t urilen)
 	return pymodule;
 }
 
+static void _mod_python_settings(PyObject *pymodule, const char *settings_file, size_t settings_filelen)
+{
+	PyObject *pysettings = PyObject_GetAttrString(pymodule, "settings");
+	PyObject *pysettingsclass = NULL;
+	if (pysettings == NULL || pysettings == Py_None)
+		pysettingsclass = PyObject_GetAttrString(pymodule, "Settings");
+	if (pysettingsclass != NULL && PyCallable_Check(pysettingsclass))
+	{
+		pysettings = PyObject_CallObject(pysettingsclass, NULL);
+		Py_DECREF(pysettingsclass);
+	}
+	if (pysettings)
+	{
+		PyObject *pyconfigurefunc = PyObject_GetAttrString(pysettings, "configure");
+		if (pyconfigurefunc && PyCallable_Check(pyconfigurefunc))
+		{
+			PyObject *pynewsettings = NULL;
+			if (settings_file == NULL)
+				pynewsettings = PyModule_New("default_settings");
+			else
+				pynewsettings = _mod_python_modulize(settings_file, settings_filelen);
+			PyObject_CallOneArg(pyconfigurefunc, pynewsettings);
+			Py_DECREF(pyconfigurefunc);
+			Py_DECREF(pynewsettings);
+			if (PyErr_Occurred())
+				PyErr_Print();
+		}
+		Py_DECREF(pysettings);
+	}
+	PyErr_Clear();
+}
+
 static void *mod_python_create(http_server_t *server, mod_python_config_t *modconfig)
 {
 	_mod_python_t *mod;
@@ -255,12 +288,24 @@ static void *mod_python_create(http_server_t *server, mod_python_config_t *modco
 	mod->server = server;
 	mod->rootfd = rootfd;
 
+	string_t settings = {0};
+	int settingsfd = openat(rootfd, str_settings_py, O_PATH);
+	if (settingsfd > 0)
+	{
+		close(settingsfd);
+		settings.data = str_settings_py;
+		settings.length = sizeof(str_settings_py) - 1;
+	}
 	mod_cgi_config_script_t *script = modconfig->scripts;
 	while (script)
 	{
 		PyObject *pymodule = _mod_python_modulize(script->path.data, script->path.length);
 		if (pymodule)
 		{
+			if (settings.length > 0)
+				_mod_python_settings(pymodule, settings.data, settings.length);
+			if (script->settings.length > 0)
+				_mod_python_settings(pymodule, script->settings.data, script->settings.length);
 			_mod_python_script_t *pscript = calloc(1, sizeof(*pscript));
 			pscript->pymodule = pymodule;
 			_string_store(&pscript->path, script->path.data, script->path.length);
@@ -420,6 +465,18 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 		if (pymodule == NULL)
 		{
 			pymodule = _mod_python_modulize(uri.data, uri.length);
+			if (pymodule)
+			{
+				string_t settings = {0};
+				int settingsfd = openat(mod->rootfd, str_settings_py, O_PATH);
+				if (settingsfd > 0)
+				{
+					close(settingsfd);
+					settings.data = str_settings_py;
+					settings.length = sizeof(str_settings_py) - 1;
+				}
+				_mod_python_settings(pymodule, settings.data, settings.length);
+			}
 		}
 		if (pymodule == NULL)
 		{
@@ -427,31 +484,6 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 			PyErr_Print();
 			return ESUCCESS;
 		}
-
-		PyObject *pysettings = PyObject_GetAttrString(pymodule, "settings");
-		PyObject *pysettingsclass = NULL;
-		if (pysettings == NULL || pysettings == Py_None)
-			pysettingsclass = PyObject_GetAttrString(pymodule, "Settings");
-		if (pysettingsclass != NULL && PyCallable_Check(pysettingsclass))
-		{
-			pysettings = PyObject_CallObject(pysettingsclass, NULL);
-			Py_DECREF(pysettingsclass);
-		}
-		if (pysettings)
-		{
-			PyObject *pyconfigurefunc = PyObject_GetAttrString(pysettings, "configure");
-			if (pyconfigurefunc && PyCallable_Check(pyconfigurefunc))
-			{
-				PyObject *pynewsettings = PyModule_New("default_settings");
-				PyObject_CallOneArg(pyconfigurefunc, pynewsettings);
-				Py_DECREF(pyconfigurefunc);
-				Py_DECREF(pynewsettings);
-				if (PyErr_Occurred())
-					PyErr_Print();
-			}
-			Py_DECREF(pysettings);
-		}
-		PyErr_Clear();
 
 		PyObject *pyrequest = _python_createPyRequest(pymodule, config, request, &uri, NULL);
 		if (pyrequest == NULL)
