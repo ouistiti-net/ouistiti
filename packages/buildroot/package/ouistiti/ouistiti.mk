@@ -5,15 +5,16 @@
 ################################################################################
 
 OUISTITI_VERSION = 3.4.0
-#OUISTITI_SITE = $(call github,ouistiti-project,ouistiti,ouistiti-$(OUISTITI_VERSION))
-OUISTITI_SITE = https://github.com/ouistiti-project/ouistiti.git
-OUISTITI_SITE_METHOD = git
+#OUISTITI_SITE = $(call github,ouistiti-project,ouistiti,$(OUISTITI_VERSION))
+OUISTITI_SITE = https://github.com/ouistiti-project/ouistiti/releases/download/ouistiti-$(OUISTITI_VERSION)
+#OUISTITI_SITE = https://github.com/ouistiti-project/ouistiti.git
+#OUISTITI_SITE_METHOD = git
+#OUISTITI_GIT_SUBMODULES = YES
 OUISTITI_LICENSE = MIT
 OUISTITI_LICENSE_FILES = LICENSE
 OUISTITI_DEPENDENCIES += libconfig
 OUISTITI_MAKE=$(MAKE1)
 OUISTITI_INSTALL_STAGING = YES
-OUISTITI_GIT_SUBMODULES = YES
 
 #OUISTITI_USERS += www-data
 define OUISTITI_USERS
@@ -110,8 +111,9 @@ OUISTITI_CONFIGURE_OPTS+=MJPEG=$(BR2_PACKAGE_OUISTITI_WS_MJPEG)
 OUISTITI_CONFIGURE_OPTS+=WEBCOMMON=$(BR2_PACKAGE_OUISTITI_WEBCOMMON)
 
 define OUISTITI_CONFIGURE_CMDS
+	cp $(OUISTITI_PKGDIR)/default_defconfig $(@D)/configs/
 	$(TARGET_CONFIGURE_OPTS) $(TARGET_MAKE_ENV) \
-		$(MAKE1) -C $(@D) $(OUISTITI_CONFIGURE_OPTS) defconfig
+		$(MAKE1) -C $(@D) $(OUISTITI_CONFIGURE_OPTS) default_defconfig
 endef
 
 define OUISTITI_BUILD_CMDS

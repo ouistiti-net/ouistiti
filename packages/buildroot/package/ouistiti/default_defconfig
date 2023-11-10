@@ -1,0 +1,122 @@
+# LIBHTTPSERVER configuration:
+LIBHTTPSERVER_DIR=libhttpserver/
+
+#define message chunk values
+MAXCHUNKS_HEADER=12
+MAXCHUNKS_CONTENT=3
+MAXCHUNKS_SESSION=70
+MAXCHUNKS_URI=2
+HTTPMESSAGE_CHUNKSIZE=256
+HTTPCLIENT_FEATURES=y
+
+#select FILE_CONFIG to use a configuration file
+#or modify src/config.h
+FILE_CONFIG=y
+#select SHARED or STATIC
+#STATIC build only one binary
+SHARED=y
+STATIC=n
+MODULES=y
+#select the maximum of host to manage (host/port and virtual)
+MAX_SERVERS=4
+
+#multi threads server may run with "fork" or "pthread"
+#if mono thread only one server may run
+VTHREAD=y
+VTHREAD_TYPE=fork
+
+BACKTRACE=n
+
+USE_STDARG=y
+USE_REENTRANT=y
+# USE_EXECVEAT is not set
+USE_POLL=y
+USE_PTHREAD=y
+
+# libraries  configuration:
+LIBWEBSOCKET=y
+LIBURI=n
+LIBUTILS=y
+LIBHASH=y
+
+# libouihash configuration:
+LIBB64=y
+# libouisocket configuration:
+MAXWEBSOCKETS=10
+
+# MODULES configuration:
+#support HTTPS connection and hash functions
+MBEDTLS=y
+WOLFSSL=n
+OPENSSL=n
+#support of static documents
+SECURITY_UNCHECKORIGIN=y
+DOCUMENT=y
+DOCUMENTREST=y
+SENDFILE=y
+DIRLISTING=y
+RANGEREQUEST=y
+DOCUMENTHOME=y
+#support CGI/1.1
+CGI=y
+#support Authentification Basic
+AUTH=y
+AUTH_TOKEN=y
+AUTHN_NONE=y
+AUTHN_BASIC=y
+AUTHN_DIGEST=y
+AUTHN_BEARER=y
+AUTHN_OAUTH2=n
+AUTHZ_SIMPLE=y
+AUTHZ_FILE=y
+AUTHZ_UNIX=y
+AUTHZ_SQLITE=y
+AUTHZ_JWT=y
+AUTHZ_MANAGER=y
+#support of the websocket
+WEBSOCKET=y
+WEBSOCKET_RT=n
+WEBSOCKET_PING=n
+#support of Virtual Hosting
+VHOST=y
+#support of request method check
+METHODLOCK=n
+#add Server Software name into the headers
+SERVERHEADER=y
+#support of the HTTP streaming
+WEBSTREAM=y
+#support of client address filter
+CLIENTFILTER=y
+#support the redirection
+REDIRECT=y
+#support cookie parser
+COOKIE=y
+#support Cross-Origin Resource Sharing (CORS)
+CORS=y
+#support of upgrade and reverse-http
+UPGRADE=y
+UPGRADE_INET=n
+#support for filter uri select by user
+USERFILTER=y
+#support of simple python scripts (staging)
+PYTHON=n
+#support of request forwarding
+#   depends on HTTPCLIENT_FEATURES
+FORWARD=n
+
+CERTIFICATE=n
+
+HOST_UTILS=y
+
+#few web client utils to develop simple site
+WS_ECHO=n
+WS_CHAT=n
+WS_JSONRPC=n
+WS_SYSLOGD=n
+UDPGW=n
+DUMMYSTREAM=n
+MJPEG=n
+WEBCOMMON=n
+JQUERY=y
+BOOTSTRAP=y
+GLYPHICONS=y
