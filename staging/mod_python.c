@@ -208,9 +208,10 @@ static PyObject *_mod_python_modulize(const char *uri, size_t urilen)
 		pymodule = PyImport_Import(module_name);
 //		pymodule = PyImport_ImportModuleLevelObject(module_name, NULL, NULL, NULL, 0);
 	}
-#if 0
-	pymodule = PyImport_ReloadModule(pymodule);
+#if 1
+	PyObject *tmp = PyImport_ReloadModule(pymodule);
 	Py_DECREF(pymodule);
+	pymodule = tmp;
 #endif
 	Py_DECREF(module_name);
 	Py_DECREF(script2_name);
@@ -354,8 +355,10 @@ static PyObject *_python_createPyRequest(PyObject *pymodule, const mod_python_co
 	PyObject *pyrequestfunc = PyObject_GetAttrString(pyrequest, "_load");
 	if (pyrequestfunc && PyCallable_Check(pyrequestfunc))
 	{
-		PyObject_CallNoArgs(pyrequestfunc);
+		PyObject_CallMethodNoArgs(pyrequest, pyrequestfunc);
 		Py_DECREF(pyrequestfunc);
+		if (PyErr_Occurred())
+			PyErr_Print();
 	}
 	return pyrequest;
 }
@@ -549,7 +552,8 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 		Py_ssize_t length = -1;
 		if (PyMapping_Check(ctx->pyresult))
 		{
-			PyObject *pyheaders = PyMapping_Items(ctx->pyresult);
+			PyObject *pyheaders = NULL;
+			pyheaders = PyMapping_Items(ctx->pyresult);
 			if (pyheaders == NULL)
 			{
 				PyObject *pyresultfunc = PyObject_GetAttrString(ctx->pyresult, "items");
@@ -625,7 +629,7 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 
 		if (ctx->pycontent)
 			ctx->pyitcontent = PyObject_GetIter(ctx->pycontent);
-		else
+		if (ctx->pyitcontent == NULL || !PyIter_Check(ctx->pyitcontent) || PyErr_Occurred())
 			PyErr_Print();
 
 		httpmessage_addcontent(response, mime, NULL, length);
@@ -645,21 +649,17 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 static int _python_responsecontent(mod_python_ctx_t *ctx, http_message_t *response)
 {
 	int ret = ECONTINUE;
-	PyObject *item = NULL;
 
-
-	if (ctx->pycontent == NULL && ctx->pyitcontent != NULL)
+	if (ctx->pycontent == NULL && ctx->pyitcontent != NULL && PyIter_Check(ctx->pyitcontent))
 	{
 		ctx->pycontent = PyIter_Next(ctx->pyitcontent);
 	}
 
-	item = ctx->pycontent;
-
 	Py_ssize_t size = 0;
-	if (item != NULL && PyBytes_Check(item))
+	if (ctx->pycontent != NULL && PyBytes_Check(ctx->pycontent))
 	{
 		char *content = NULL;
-		PyBytes_AsStringAndSize(item, &content, &size);
+		PyBytes_AsStringAndSize(ctx->pycontent, &content, &size);
 		python_dbg("python: content %s", content);
 		if (content != NULL)
 		{
@@ -674,8 +674,11 @@ static int _python_responsecontent(mod_python_ctx_t *ctx, http_message_t *respon
 	}
 	else
 	{
-		if (item)
-			Py_DECREF(item);
+		if (ctx->pycontent)
+		{
+			Py_DECREF(ctx->pycontent);
+			ctx->pycontent = NULL;
+		}
 		ctx->state = STATE_OUTFINISH;
 	}
 	return ret;
