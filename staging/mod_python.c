@@ -56,12 +56,20 @@
 
 #define python_dbg dbg
 
+#define dbgmarkdown python_dbg("%s %d", __FILE__, __LINE__)
+
 #if 0
 static void _python_is(const char * name,PyObject *obj)
 {
 	dbg("%s", name);
 	if (obj)
 	{
+		PyObject *pyrepr = PyObject_Str(obj);
+		PyObject *pyasciirepr = PyUnicode_AsASCIIString(pyrepr);
+		const char *repr = PyBytes_AsString(pyasciirepr);
+		dbg("\tis %s", repr);
+		Py_DECREF(pyasciirepr);
+		Py_DECREF(pyrepr);
 		dbg("\tis Bytes %d", PyBytes_Check(obj));
 		dbg("\tis Dict %d", PyDict_Check(obj));
 		dbg("\tis Index %d", PyIndex_Check(obj));
@@ -71,20 +79,28 @@ static void _python_is(const char * name,PyObject *obj)
 		dbg("\tis Unicode %d", PyUnicode_Check(obj));
 		dbg("\tis Callable %d", PyCallable_Check(obj));
 		dbg("\tis Iterator %d", PyIter_Check(obj));
-		PyObject *pyrepr = PyObject_Str(obj);
-		PyObject *pyasciirepr = PyUnicode_AsASCIIString(pyrepr);
-		const char *repr = PyBytes_AsString(pyasciirepr);
-		dbg("%s", repr);
-		Py_DECREF(pyasciirepr);
-		Py_DECREF(pyrepr);
+		dbg("\trefcount %ld", Py_REFCNT(obj));
 	}
 	else
 	{
 		dbg("\tis null");
 	}
 }
+#define PYOBJECT_IS(obj) _python_is(#obj, obj)
+#else
+#define PYOBJECT_IS(...)
 #endif
 
+/**
+ * [PyRefcnt] Python refcount analyze
+ * The C Python API is not homogeneous and some times is necessary
+ * to incref or decref the objects and other times is forbidden.
+ * All depends on the called function with the object.
+ * The documentation of python is not clear and partial about refcounts.
+ * PyDict_SetItem "steal" the key and the value, which must keep as this.
+ *
+ * DECREF has not to be called if the refcount is 1, event if we use XDECREF
+ */
 static const char str_python[] = "python";
 
 typedef struct mod_cgi_config_s mod_python_config_t;
@@ -184,9 +200,7 @@ static PyObject *_mod_python_modulize(const char *uri, size_t urilen)
 	python_dbg("python: modulize %.*s", (int)urilen, uri);
 	PyObject *script_name = PyUnicode_DecodeFSDefaultAndSize(uri, urilen);
 	PyObject *script2_name = PyUnicode_Replace(script_name, PyUnicode_FromString(".py"), PyUnicode_FromString(""), -1);
-	Py_DECREF(script_name);
 	PyObject *module_name = PyUnicode_Replace(script2_name, PyUnicode_FromString("/"), PyUnicode_FromString("."), -1);
-	Py_DECREF(script2_name);
 	
 	PyObject *pymodule = PyImport_GetModule(module_name);
 	if (pymodule == NULL)
@@ -199,6 +213,8 @@ static PyObject *_mod_python_modulize(const char *uri, size_t urilen)
 	Py_DECREF(pymodule);
 #endif
 	Py_DECREF(module_name);
+	Py_DECREF(script2_name);
+	Py_DECREF(script_name);
 	if (pymodule == NULL)
 	{
 		err("python: unable to modulize %.*s", (int)urilen, uri);
@@ -271,16 +287,9 @@ static void mod_python_destroy(void *arg)
 
 static void _python_freectx(mod_python_ctx_t *ctx)
 {
-	if (ctx->pyitcontent)
-		Py_DECREF(ctx->pyitcontent);
-	if (ctx->pycontent)
-		Py_DECREF(ctx->pycontent);
-	if (ctx->pyresult)
-		Py_DECREF(ctx->pyresult);
-	if (ctx->pyrequest)
-		Py_DECREF(ctx->pyrequest);
-	if (ctx->pymodule)
-		Py_DECREF(ctx->pymodule);
+	Py_XDECREF(ctx->pyitcontent);
+	Py_XDECREF(ctx->pyresult);
+	Py_XDECREF(ctx->pymodule);
 	free(ctx);
 }
 
@@ -332,8 +341,8 @@ static PyObject *_python_createPyRequest(PyObject *pymodule, const mod_python_co
 			pivalue = Py_True;
 		}
 		PyDict_SetItem(pyenv, pikey, pivalue);
-		Py_DECREF(pikey);
-		Py_XDECREF(pivalue);
+		//Py_DECREF(pikey); ///[PyRefcnt]
+		//Py_XDECREF(pivalue); ///[PyRefcnt]
 		PyMem_Free(env[count]);
 	}
 	PyMem_Free(env);
@@ -427,14 +436,12 @@ static int _python_start(_mod_python_t *mod, http_message_t *request, http_messa
 			Py_DECREF(pysettingsclass);
 		}
 
-		PyObject *pyresponseclass = NULL;
 		PyObject *pyrequest = _python_createPyRequest(pymodule, config, request, &uri, NULL);
 		if (pyrequest == NULL)
 		{
 			err("python: script bad syntax HttpRequest not available");
 			httpmessage_result(response, RESULT_403);
 			PyErr_Print();
-			Py_DECREF(pyresponseclass);
 			Py_DECREF(pymodule);
 			return ESUCCESS;
 		}
@@ -502,11 +509,12 @@ static int _python_run(mod_python_ctx_t *ctx)
 		PyErr_Print();
 		ret = ESUCCESS;
 	}
+	Py_DECREF(ctx->pyrequest);
+	ctx->pyrequest = NULL;
 	if (ctx->pycontent)
 		Py_DECREF(ctx->pycontent);
 	ctx->pycontent = NULL;
 
-				PyErr_Print();
 	if (ctx->pyresult == NULL)
 		PyErr_Print();
 	else
@@ -563,14 +571,21 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 			for (int i = 0; pyitems && i < PyList_Size(pyitems); i++)
 			{
 				PyObject *pyheader = PyList_GetItem(pyitems, i);
+				Py_INCREF(pyheader);
+				PYOBJECT_IS(pyheader);
 
 				PyObject *pykey = NULL;
 				pykey = PyTuple_GetItem(pyheader, 0);
+				Py_INCREF(pykey);
+				PYOBJECT_IS(pykey);
 				PyObject *pyasciikey = PyUnicode_AsASCIIString(pykey);
 				const char *key = PyBytes_AsString(pyasciikey);
 
 				//PyObject *pyvalue = PyObject_GetItem(ctx->pyresult, pyheader);
 				PyObject *pyvalue = PyTuple_GetItem(pyheader, 1);
+				Py_INCREF(pyvalue);
+				PYOBJECT_IS(pyvalue);
+
 				PyObject *pylatin1value = PyUnicode_AsLatin1String(pyvalue);
 				const char *value = PyBytes_AsString(pylatin1value);
 
@@ -583,12 +598,11 @@ static int _python_responseheader(mod_python_ctx_t *ctx, http_message_t *respons
 					length = atol(value);
 				Py_DECREF(pyasciikey);
 				Py_DECREF(pylatin1value);
-				Py_DECREF(pyvalue);
-				Py_DECREF(pykey);
-				Py_DECREF(pyheader);
+				Py_DECREF(pyvalue); ///[PyRefcnt]
+				Py_DECREF(pykey); ///[PyRefcnt]
+				Py_DECREF(pyheader); ///[PyRefcnt]
 			}
-			if (pyheaders)
-				Py_DECREF(pyheaders);
+			Py_XDECREF(pyheaders);
 		}
 		PyObject *pycontent_type = NULL;
 		if (mime == NULL)
