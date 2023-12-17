@@ -161,6 +161,10 @@ static int ouistiticonfig_checkserver(serverconfig_t *new, ouistiticonfig_t *oui
 static void ouistiticonfig_servers(config_t *configfile, ouistiticonfig_t *ouistiticonfig)
 {
 	const config_setting_t *configservers = config_lookup(configfile, "servers");
+	if (configservers == NULL)
+	{
+		configservers = config_lookup(configfile, "server");
+	}
 	if (configservers)
 	{
 		int count = config_setting_length(configservers);
@@ -258,6 +262,13 @@ ouistiticonfig_t *ouistiticonfig_create(const char *filepath)
 			entry = readdir(configdir);
 		}
 		closedir(configdir);
+	}
+	else if (configd != NULL)
+	{
+		struct stat filestat;
+		int ret = stat(configd, &filestat);
+		if (!ret && S_ISREG(filestat.st_mode))
+			ouistiticonfig_subconfigfile(configd, ouistiticonfig);
 	}
 
 	return ouistiticonfig;
