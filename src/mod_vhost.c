@@ -28,6 +28,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #ifdef MODULES
 #include <dlfcn.h>
@@ -54,6 +57,7 @@ struct mod_vhost_s
 {
 	/** @param name of the server */
 	http_server_config_t vserver;
+	serverconfig_t serverconfig;
 	server_t *server;
 	void *modulesconfig;
 };
@@ -93,10 +97,32 @@ static int _vhost_vconnector(void *arg, http_message_t *request, http_message_t 
 }
 
 #ifdef FILE_CONFIG
+static mod_vhost_t *_vhost_config(config_setting_t *config, server_t *server, config_t *configfile)
+{
+	mod_vhost_t *vhost = NULL;
+	
+	char *hostname = NULL;
+	config_setting_lookup_string(config, "hostname", (const char **)&hostname);
+	if (hostname == NULL || hostname[0] == '\0')
+	{
+		err("vhost configuration without hostname");
+		return NULL;
+	}
+	vhost = calloc(1, sizeof(*vhost));
+	vhost->server = server;
+//	memcpy(&vhost->vserver, ouistiti_serverconfig(server), sizeof(vhost->vserver));
+	vhost->vserver.hostname = hostname;
+	config_setting_lookup_string(config, "service", (const char **)&vhost->vserver.service);
+	vhost->modulesconfig = config;
+	warn("vhostname %s %s", hostname, vhost->vserver.service);
+	return vhost;
+}
+
 static int vhost_config(config_setting_t *iterator, server_t *server, int index, void **modconfig)
 {
 	int ret = ESUCCESS;
 	mod_vhost_t *vhost = NULL;
+	config_t *configfile = NULL;
 
 #if LIBCONFIG_VER_MINOR < 5
 	config_setting_t *config = config_setting_get_member(iterator, "vhost");
@@ -110,22 +136,34 @@ static int vhost_config(config_setting_t *iterator, server_t *server, int index,
 			config = config_setting_get_elem(config, index);
 			ret = ECONTINUE;
 	}
+	if (config && config_setting_type(config) ==  CONFIG_TYPE_STRING)
+	{
+		const char *filepath = config_setting_get_string(config);
+		struct stat filestat;
+		int ret = stat(filepath, &filestat);
+		if (!ret && S_ISREG(filestat.st_mode))
+		{
+			configfile = calloc(1, sizeof(*configfile));
+			ret = config_read_file(configfile, filepath);
+		}
+		else
+			ret = -1;
+		if (ret == CONFIG_TRUE)
+		{
+			config = config_lookup(configfile, "servers");
+		}
+		if (ret == CONFIG_TRUE && config == NULL)
+		{
+			config = config_lookup(configfile, "server");
+		}
+		if (ret == CONFIG_TRUE && config == NULL)
+		{
+			config = config_lookup(configfile, "vhost");
+		}
+	}
 	if (config && config_setting_is_group(config))
 	{
-		char *hostname = NULL;
-		config_setting_lookup_string(config, "hostname", (const char **)&hostname);
-		if (hostname == NULL || hostname[0] == '\0')
-		{
-			err("vhost configuration without hostname");
-			return EREJECT;
-		}
-		vhost = calloc(1, sizeof(*vhost));
-		vhost->server = server;
-		memcpy(&vhost->vserver, ouistiti_serverconfig(server), sizeof(vhost->vserver));
-		vhost->vserver.hostname = hostname;
-		config_setting_lookup_string(config, "service", (const char **)&vhost->vserver.service);
-		vhost->modulesconfig = config;
-		warn("vhostname %s %s", hostname, vhost->vserver.service);
+		vhost = _vhost_config(config, server, configfile);
 	}
 	else
 		ret = EREJECT;
