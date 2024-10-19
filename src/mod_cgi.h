@@ -43,12 +43,13 @@ typedef struct mod_cgi_config_script_s mod_cgi_config_script_t;
 struct mod_cgi_config_script_s
 {
 	string_t path;
+	string_t settings;
 	mod_cgi_config_script_t *next;
 };
 
 typedef struct mod_cgi_config_s
 {
-	char *docroot;
+	string_t docroot;
 	htaccess_t htaccess;
 	mod_cgi_config_script_t *scripts;
 	const char **env;
@@ -60,7 +61,8 @@ typedef struct mod_cgi_config_s
 
 extern const module_t mod_cgi;
 
-char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, const char *cgi_path, size_t cgi_pathlen, const char *path_info, size_t path_infolen);
+typedef void *(*calloc_t)(size_t nelem, size_t elsize);
+unsigned char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, string_t *cgi_path, string_t *path_info, calloc_t calloc);
 #ifdef FILE_CONFIG
 typedef int (*cgi_configscript_t)(config_setting_t *setting, mod_cgi_config_t *python);
 int cgienv_config(config_setting_t *configserver, config_setting_t *config, server_t *server, mod_cgi_config_t **modconfig, cgi_configscript_t configscript);

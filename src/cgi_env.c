@@ -67,8 +67,8 @@ size_t env_gatewayinterface(const mod_cgi_config_t *UNUSED(config), http_message
 
 size_t env_docroot(const mod_cgi_config_t *config, http_message_t *request, const char *UNUSED(cgi_path), const char **value)
 {
-	*value = config->docroot;
-	return -1;
+	*value = config->docroot.data;
+	return config->docroot.length;
 }
 
 size_t env_serversoftware(const mod_cgi_config_t *UNUSED(config), http_message_t *request, const char *UNUSED(cgi_path), const char **value)
@@ -216,250 +216,289 @@ static const httpenv_t cgi_env[] =
 {
 	{
 		.id = -1,
-		.target = STRING_DCL("CONTENT_LENGTH="),
+		.target = STRING_DCL("CONTENT_LENGTH"),
 		.length = 16,
 		.cb = &env_requestcontentlength,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("GATEWAY_INTERFACE="),
+		.target = STRING_DCL("GATEWAY_INTERFACE"),
 		.length = 26,
 		.cb = &env_gatewayinterface,
 	},
 	{
 		.id = PATH_INFO,
-		.target = STRING_DCL("PATH_INFO="),
+		.target = STRING_DCL("PATH_INFO"),
 		.length = 512,
 	},
 	{
 		.id = PATH_INFO,
-		.target = STRING_DCL("PATH_TRANSLATED="),
+		.target = STRING_DCL("PATH_TRANSLATED"),
 		.length = 512,
 	},
 	{
 		.id = SCRIPT_FILENAME,
-		.target = STRING_DCL("SCRIPT_FILENAME="),
+		.target = STRING_DCL("SCRIPT_FILENAME"),
 		.length = 512,
 	},
 	{
 		. id = SCRIPT_NAME,
-		.target = STRING_DCL("SCRIPT_NAME="),
+		.target = STRING_DCL("SCRIPT_NAME"),
 		.length = 64,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("DOCUMENT_ROOT="),
+		.target = STRING_DCL("DOCUMENT_ROOT"),
 		.length = 512,
 		.cb = &env_docroot,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("SERVER_SOFTWARE="),
+		.target = STRING_DCL("SERVER_SOFTWARE"),
 		.length = 26,
 		.cb = &env_serversoftware,
 
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("SERVER_NAME="),
+		.target = STRING_DCL("SERVER_NAME"),
 		.length = 26,
 		.cb = &env_servername,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("SERVER_PROTOCOL="),
+		.target = STRING_DCL("SERVER_PROTOCOL"),
 		.length = 10,
 		.cb = &env_serverprotocol,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("SERVER_ADDR="),
+		.target = STRING_DCL("SERVER_ADDR"),
 		.length = 26,
 		.cb = &env_serveraddr,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("SERVER_PORT="),
+		.target = STRING_DCL("SERVER_PORT"),
 		.length = 6,
 		.cb = &env_serverport,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("SERVER_SERVICE="),
+		.target = STRING_DCL("SERVER_SERVICE"),
 		.length = 26,
 		.cb = &env_serverservice,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("REQUEST_METHOD="),
+		.target = STRING_DCL("REQUEST_METHOD"),
 		.length = 6,
 		.cb = &env_requestmethod,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("REQUEST_SCHEME="),
+		.target = STRING_DCL("REQUEST_SCHEME"),
 		.length = 6,
 		.cb = &env_requestscheme,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("REQUEST_URI="),
+		.target = STRING_DCL("REQUEST_URI"),
 		.length = 512,
 		.cb = &env_requesturi,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("CONTENT_TYPE="),
+		.target = STRING_DCL("CONTENT_TYPE"),
 		.length = 128,
 		.cb = &env_requestcontenttype,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("QUERY_STRING="),
+		.target = STRING_DCL("QUERY_STRING"),
 		.length = 512,
 		.cb = &env_requestquery,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("HTTP_ACCEPT="),
+		.target = STRING_DCL("HTTP_ACCEPT"),
 		.length = 128,
 		.options = ENV_NOTREQUIRED,
 		.cb = &env_requestaccept,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("HTTP_ACCEPT_ENCODING="),
+		.target = STRING_DCL("HTTP_ACCEPT_ENCODING"),
 		.length = 128,
 		.options = ENV_NOTREQUIRED,
 		.cb = &env_requestacceptencoding,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("HTTP_ACCEPT_LANGUAGE="),
+		.target = STRING_DCL("HTTP_ACCEPT_LANGUAGE"),
 		.length = 64,
 		.options = ENV_NOTREQUIRED,
 		.cb = &env_requestacceptlanguage,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("REMOTE_HOST="),
+		.target = STRING_DCL("REMOTE_HOST"),
 		.length = 26,
 		.cb = &env_remotehost,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("REMOTE_ADDR="),
+		.target = STRING_DCL("REMOTE_ADDR"),
 		.length = INET6_ADDRSTRLEN,
 		.cb = &env_remoteaddr,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("REMOTE_PORT="),
+		.target = STRING_DCL("REMOTE_PORT"),
 		.length = 26,
 		.cb = &env_remoteport,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("REMOTE_USER="),
+		.target = STRING_DCL("REMOTE_USER"),
 		.length = 26,
 		.options = ENV_NOTREQUIRED,
 		.cb = &env_authuser,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("AUTH_TYPE="),
+		.target = STRING_DCL("AUTH_TYPE"),
 		.length = 26,
 		.options = ENV_NOTREQUIRED,
 		.cb = &env_authtype,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("HTTP_COOKIE="),
+		.target = STRING_DCL("HTTP_COOKIE"),
 		.length = 512,
 		.cb = &env_requestcookie,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("HTTP_HOST="),
+		.target = STRING_DCL("HTTP_HOST"),
 		.length = 512,
 		.cb = &env_requesthost,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("HTTP_USER_AGENT="),
+		.target = STRING_DCL("HTTP_USER_AGENT"),
 		.length = 512,
 		.cb = &env_requestuseragent,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("HTTP_REFERER="),
+		.target = STRING_DCL("HTTP_REFERER"),
 		.length = 512,
 		.options = ENV_NOTREQUIRED,
 		.cb = &env_requestreferer,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("HTTP_ORIGIN="),
+		.target = STRING_DCL("HTTP_ORIGIN"),
 		.length = 512,
 		.options = ENV_NOTREQUIRED,
 		.cb = &env_requestorigin,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("AUTH_USER="),
+		.target = STRING_DCL("AUTH_USER"),
 		.length = 26,
 		.options = ENV_NOTREQUIRED,
 		.cb = &env_authuser,
 	},
 	{
 		.id = HTTPS,
-		.target = STRING_DCL("HTTPS="),
+		.target = STRING_DCL("HTTPS"),
 		.length = 1,
 		.options = ENV_NOTREQUIRED,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("REMOTE_GROUP="),
+		.target = STRING_DCL("REMOTE_GROUP"),
 		.length = 26,
 		.options = ENV_NOTREQUIRED,
 		.cb = &env_authgroup,
 	},
 	{
 		.id = -1,
-		.target = STRING_DCL("AUTH_GROUP="),
+		.target = STRING_DCL("AUTH_GROUP"),
 		.length = 26,
 		.options = ENV_NOTREQUIRED,
 		.cb = &env_authgroup,
 	}
 };
 
-char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, const char *cgi_path, size_t cgi_pathlen, const char *path_info, size_t path_infolen)
+static size_t _cgi_formatenv(const mod_cgi_config_t *config, unsigned char **env, const httpenv_t *cgi_env, const char *value, size_t valuelen, int adddocroot, calloc_t tcalloc)
 {
-	char **env = NULL;
+	size_t length = 0;
+	if (env == NULL)
+		return cgi_env->target.length + 1 + cgi_env->length;
+	if (valuelen == (size_t)-1)
+	{
+		warn("cgi: problem with %s", cgi_env->target.data);
+		valuelen = cgi_env->length; // strlen(value)
+	}
+	length = cgi_env->target.length + 1 + valuelen;
+	if (adddocroot)
+		length += config->docroot.length + 1;
+	*env = (unsigned char *)tcalloc(1, length + 1);
+	if (adddocroot)
+		length = snprintf((char *)*env, length + 1, "%s=%.*s/%.*s", cgi_env->target.data, (int)config->docroot.length, config->docroot.data, (int)valuelen, value);
+	else
+		length = snprintf((char *)*env, length + 1, "%s=%.*s", cgi_env->target.data, (int)valuelen, value);
+	return length;
+}
+
+unsigned char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, string_t *cgi_path, string_t *path_info, calloc_t tcalloc)
+{
+	unsigned char **env = NULL;
 	int nbenvs = sizeof(cgi_env) / sizeof(*cgi_env);
 
-	env = calloc(sizeof(char *), nbenvs + config->nbenvs + 1);
+	env = tcalloc(sizeof(unsigned char *), nbenvs + config->nbenvs + 1);
 
 	int i = 0;
 	int j = 0;
 	for (i = 0; i < nbenvs; i++)
 	{
+		int adddocroot = 0;
 		int options = cgi_env[i].options;
-		size_t length = cgi_env[i].target.length + cgi_env[i].length;
-		env[i] = (char *)calloc(1, length + 1);
 		const char *value = NULL;
-		int valuelength = -1;
+		size_t valuelength = -1;
 		switch (cgi_env[i].id)
 		{
 			case SCRIPT_NAME:
+				if (cgi_path)
+				{
+					value = cgi_path->data;
+					valuelength = cgi_path->length;
+					if (strstr(cgi_path->data, config->docroot.data) == cgi_path->data)
+					{
+						value += config->docroot.length;
+						valuelength -= config->docroot.length;
+					}
+				}
+			break;
 			case SCRIPT_FILENAME:
-				value = cgi_path;
-				valuelength = (int)cgi_pathlen;
+				if (cgi_path)
+				{
+					value = cgi_path->data;
+					valuelength = cgi_path->length;
+					if (strstr(cgi_path->data, config->docroot.data) == NULL)
+						adddocroot = 1;
+				}
 			break;
 			case PATH_INFO:
 			case PATH_TRANSLATED:
-				value = path_info;
-				valuelength = (int)path_infolen;
+				if (path_info)
+				{
+					value = path_info->data;
+					valuelength = (int)path_info->length;
+				}
 			break;
 			case HTTPS:
 				if (config->options & CGI_OPTION_TLS)
@@ -467,7 +506,7 @@ char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, con
 			break;
 			default:
 				if (cgi_env[i].cb != NULL)
-					valuelength = cgi_env[i].cb(config, request, cgi_path, &value);
+					valuelength = cgi_env[i].cb(config, request, cgi_path->data, &value);
 		}
 		if ((value == NULL) && (options & ENV_NOTREQUIRED) == 0)
 		{
@@ -476,13 +515,13 @@ char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, con
 		}
 		if (value != NULL)
 		{
-			snprintf(env[j], length + 1, "%s%.*s", cgi_env[i].target.data, valuelength, value);
+			_cgi_formatenv(config, &env[j], &cgi_env[i], value, valuelength, adddocroot, tcalloc);
 			j++;
 		}
 	}
 	for (i = 0; i < config->nbenvs; i++)
 	{
-		env[j + i] = strdup(config->env[i]);
+		env[j + i] = (unsigned char *)strdup(config->env[i]);
 	}
 	env[j + i] = NULL;
 	return env;
@@ -492,7 +531,13 @@ char **cgi_buildenv(const mod_cgi_config_t *config, http_message_t *request, con
 int cgienv_config(config_setting_t *configserver, config_setting_t *config, server_t *server, mod_cgi_config_t **modconfig, cgi_configscript_t configscript)
 {
 	mod_cgi_config_t *cgi = calloc(1, sizeof(*cgi));
-	config_setting_lookup_string(config, "docroot", (const char **)&cgi->docroot);
+	if (config_setting_lookup_string(config, "docroot", (const char **)&cgi->docroot.data) == CONFIG_FALSE)
+	{
+		free(cgi);
+		return EREJECT;
+	}
+
+	cgi->docroot.length = strlen(cgi->docroot.data);
 	htaccess_config(config, &cgi->htaccess);
 	if (configscript)
 	{

@@ -88,9 +88,8 @@ struct mod_cgi_ctx_s
 	string_t path_info;
 
 	pid_t pid;
-	int tocgi[2];
-	int fromcgi[2];
-
+	int tocgi;
+	int fromcgi;
 	char *chunk;
 };
 
@@ -118,7 +117,7 @@ static int cgi_config(config_setting_t *iterator, server_t *server, int index, v
 #else
 static const mod_cgi_config_t g_cgi_config =
 {
-	.docroot = "/srv/www""/cig-bin",
+	.docroot = STRING_DCL("/srv/www""/cig-bin"),
 	.htaccess = {
 		.denylast = "*",
 		.allow = "*.cgi*",
@@ -139,10 +138,10 @@ static void *mod_cgi_create(http_server_t *server, mod_cgi_config_t *modconfig)
 	if (!modconfig)
 		return NULL;
 
-	int rootfd = open(modconfig->docroot, O_PATH | O_DIRECTORY);
+	int rootfd = open(modconfig->docroot.data, O_PATH | O_DIRECTORY);
 	if (rootfd == -1)
 	{
-		err("cgi: %s access denied", modconfig->docroot);
+		err("cgi: %s access denied", modconfig->docroot.data);
 		return NULL;
 	}
 
@@ -171,32 +170,36 @@ static void _cgi_freectx(mod_cgi_ctx_t *ctx)
 {
 	if (ctx->chunk)
 		free(ctx->chunk);
-	if (ctx->fromcgi[0])
-		close(ctx->fromcgi[0]);
-	if (ctx->tocgi[1] > 0)
-		close(ctx->tocgi[1]);
+	if (ctx->fromcgi > 0)
+		close(ctx->fromcgi);
+	if (ctx->tocgi > 0)
+		close(ctx->tocgi);
 	free(ctx);
 }
 
-static int _mod_cgi_fork(mod_cgi_ctx_t *ctx, http_message_t *request)
+static int _mod_cgi_fork(mod_cgi_ctx_t *ctx, http_message_t *request, string_t *cgi_path, string_t *path_info)
 {
 	_mod_cgi_t *mod = ctx->mod;
 	const mod_cgi_config_t *config = mod->config;
 
-	if (pipe(ctx->tocgi) < 0)
+	int tocgi[2];
+	if (pipe(tocgi) < 0)
 		return EREJECT;
-	if (pipe(ctx->fromcgi))
+	int fromcgi[2];
+	if (pipe(fromcgi))
 		return EREJECT;
 	pid_t pid = fork();
 	if (pid)
 	{
 		/* keep only input of the pipe */
-		close(ctx->tocgi[0]);
+		close(tocgi[0]);
+		ctx->tocgi = tocgi[1];
 		/* keep only output of the pipe */
-		close(ctx->fromcgi[1]);
+		close(fromcgi[1]);
+		ctx->fromcgi = fromcgi[0];
 #ifdef DEBUG
 		char **envs = NULL;
-		envs = cgi_buildenv(config, request, ctx->cgi_path.data, ctx->cgi_path.length, ctx->path_info.data, ctx->path_info.length);
+		envs = (char **)cgi_buildenv(config, request, cgi_path, path_info, calloc);
 		char *env = *envs++;
 		while (env != NULL)
 		{
@@ -208,25 +211,25 @@ static int _mod_cgi_fork(mod_cgi_ctx_t *ctx, http_message_t *request)
 	else /* into child */
 	{
 		int flags;
-		flags = fcntl(ctx->tocgi[0],F_GETFD);
-		fcntl(ctx->tocgi[0],F_SETFD, flags | FD_CLOEXEC);
-		flags = fcntl(ctx->fromcgi[1],F_GETFD);
-		fcntl(ctx->fromcgi[1],F_SETFD, flags | FD_CLOEXEC);
+		flags = fcntl(tocgi[0],F_GETFD);
+		fcntl(tocgi[0],F_SETFD, flags | FD_CLOEXEC);
+		flags = fcntl(fromcgi[1],F_GETFD);
+		fcntl(fromcgi[1],F_SETFD, flags | FD_CLOEXEC);
 		/* send data from server to the stdin of the cgi */
-		close(ctx->tocgi[1]);
-		dup2(ctx->tocgi[0], STDIN_FILENO);
-		close(ctx->tocgi[0]);
+		close(tocgi[1]);
+		dup2(tocgi[0], STDIN_FILENO);
+		close(tocgi[0]);
 		/* send data from the stdout of the cgi to server */
-		close(ctx->fromcgi[0]);
-		dup2(ctx->fromcgi[1], STDOUT_FILENO);
-		close(ctx->fromcgi[1]);
+		close(fromcgi[0]);
+		dup2(fromcgi[1], STDOUT_FILENO);
+		close(fromcgi[1]);
 
 		int sock = httpmessage_keepalive(request);
 
-		char * const argv[2] = { (char *)ctx->cgi_path.data, NULL };
+		char * const argv[2] = { (char *)cgi_path->data, NULL };
 
 		char **env = NULL;
-		env = cgi_buildenv(config, request, ctx->cgi_path.data, ctx->cgi_path.length, ctx->path_info.data, ctx->path_info.length);
+		env = (char **)cgi_buildenv(config, request, cgi_path, path_info, calloc);
 
 		close(sock);
 
@@ -236,11 +239,11 @@ static int _mod_cgi_fork(mod_cgi_ctx_t *ctx, http_message_t *request)
 		 * cgipath is absolute, but in fact execveat runs in docroot.
 		 */
 #ifdef USE_EXECVEAT
-		execveat(mod->rootfd, ctx->cgi_path.data, argv, env, 0);
+		execveat(mod->rootfd, cgi_path->data, argv, env, 0);
 #else
 		// this part die if the program is running under valgrind
 		// use execeat
-		int scriptfd = openat(mod->rootfd, ctx->cgi_path.data, O_PATH);
+		int scriptfd = openat(mod->rootfd, cgi_path->data, O_PATH);
 		close(mod->rootfd);
 		fexecve(scriptfd, argv, env);
 #endif
@@ -260,13 +263,13 @@ static int _cgi_changestate(mod_cgi_ctx_t *ctx, int state)
 	return state;
 }
 
-static int _cgi_start(_mod_cgi_t *mod, http_message_t *request, http_message_t *response)
+static int _cgi_start(_mod_cgi_t *mod, http_message_t *request)
 {
 	const mod_cgi_config_t *config = mod->config;
 	int ret = EREJECT;
 	const char *uri = NULL;
 	size_t urilen = httpmessage_REQUEST2(request,"uri", &uri);
-	if (urilen > 0 && config->docroot)
+	if (urilen > 0 && config->docroot.length > 0)
 	{
 		const char *path_info = NULL;
 		if (htaccess_check(&config->htaccess, uri, &path_info) != ESUCCESS)
@@ -327,7 +330,6 @@ static int _cgi_start(_mod_cgi_t *mod, http_message_t *request, http_message_t *
 		/* at least user or group may execute the CGI */
 		if ((filestat.st_mode & (S_IXUSR | S_IXGRP)) != (S_IXUSR | S_IXGRP))
 		{
-			httpmessage_result(response, RESULT_403);
 			warn("cgi: %s access denied", uri);
 			warn("cgi: %s", strerror(errno));
 			close(scriptfd);
@@ -337,7 +339,7 @@ static int _cgi_start(_mod_cgi_t *mod, http_message_t *request, http_message_t *
 
 		dbg("cgi: run %s", uri);
 		ctx->mod = mod;
-		ctx->pid = _mod_cgi_fork(ctx, request);
+		ctx->pid = _mod_cgi_fork(ctx, request, &ctx->cgi_path, &ctx->path_info);
 		ctx->state = STATE_INSTART;
 		ctx->chunk = malloc(config->chunksize + 1);
 		httpmessage_private(request, ctx);
@@ -366,11 +368,11 @@ static int _cgi_request(mod_cgi_ctx_t *ctx, http_message_t *request)
 #endif
 		fd_set wfds;
 		FD_ZERO(&wfds);
-		FD_SET(ctx->tocgi[1], &wfds);
+		FD_SET(ctx->tocgi, &wfds);
 
-		ret = select(ctx->tocgi[1] + 1, NULL, &wfds, NULL, &mod->config->timeout);
+		ret = select(ctx->tocgi + 1, NULL, &wfds, NULL, &mod->config->timeout);
 		if (ret == 1)
-			len = write(ctx->tocgi[1], input, inputlen);
+			len = write(ctx->tocgi, input, inputlen);
 		else
 			len = 0;
 		cgi_dbg("cgi: wrote %d %d", len, inputlen);
@@ -420,12 +422,12 @@ static int _cgi_response(mod_cgi_ctx_t *ctx, http_message_t *response)
 	fd_set rfds;
 
 	FD_ZERO(&rfds);
-	FD_SET(ctx->fromcgi[0], &rfds);
-	sret = select(ctx->fromcgi[0] + 1, &rfds, NULL, NULL, &mod->config->timeout);
-	if (sret > 0 && FD_ISSET(ctx->fromcgi[0], &rfds))
+	FD_SET(ctx->fromcgi, &rfds);
+	sret = select(ctx->fromcgi + 1, &rfds, NULL, NULL, &mod->config->timeout);
+	if (sret > 0 && FD_ISSET(ctx->fromcgi, &rfds))
 	{
 		int size = config->chunksize;
-		size = read(ctx->fromcgi[0], ctx->chunk, size);
+		size = read(ctx->fromcgi, ctx->chunk, size);
 		if (size < 0)
 		{
 			err("cgi: read %s", strerror(errno));
@@ -470,7 +472,9 @@ static int _cgi_connector(void *arg, http_message_t *request, http_message_t *re
 
 	if (ctx == NULL)
 	{
-		ret = _cgi_start(mod, request, response);
+		ret = _cgi_start(mod, request);
+		if (ret == ESUCCESS)
+			httpmessage_result(response, RESULT_403);
 		if (ret != EINCOMPLETE)
 			return ret;
 		ctx = httpmessage_private(request, NULL);
@@ -481,7 +485,7 @@ static int _cgi_connector(void *arg, http_message_t *request, http_message_t *re
 	{
 
 		int instate = (ctx->state & STATE_INMASK);
-		if (ctx->tocgi[1] > 0 && instate >= STATE_INSTART && instate < STATE_INFINISH)
+		if (ctx->tocgi > 0 && instate >= STATE_INSTART && instate < STATE_INFINISH)
 		{
 			_cgi_request(ctx, request);
 			/**
@@ -490,9 +494,9 @@ static int _cgi_connector(void *arg, http_message_t *request, http_message_t *re
 		}
 		else if (instate == STATE_INFINISH)
 		{
-			if (ctx->tocgi[1] > 0)
-				close(ctx->tocgi[1]);
-			ctx->tocgi[1] = -1;
+			if (ctx->tocgi > 0)
+				close(ctx->tocgi);
+			ctx->tocgi = -1;
 			_cgi_changestate(ctx, STATE_INMASK);
 		}
 		/**
@@ -520,7 +524,7 @@ static int _cgi_connector(void *arg, http_message_t *request, http_message_t *re
 		}
 		else if (outstate == STATE_OUTFINISH)
 		{
-			close(ctx->fromcgi[0]);
+			close(ctx->fromcgi);
 			if (instate == STATE_INMASK)
 				ctx->state = STATE_END;
 			ret = ECONTINUE;
