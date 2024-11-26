@@ -7,7 +7,7 @@ servers= ({
 		version="HTTP11";
 		vhost = (
 		{
-			hostname = "myvhost";
+			hostname = "myvhost.ouistiti.net";
 			auth = {
 				type="Basic";
 				realm="www.ouistiti.net";
@@ -32,7 +32,8 @@ servers= ({
 
 			};
 		},{
-			hostname = "myvhost2";
+			hostname = "myvhost2.ouistiti.net";
+			service = "myvhost2";
 			document = {
 				docroot = "%PWD%/tests/htdocs/";
                                 allow = ".html,.*htm*,.css,.js,.txt,*";

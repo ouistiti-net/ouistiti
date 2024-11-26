@@ -1,4 +1,4 @@
-DESC="test websocket startup"
+DESC="Vhost: websocket startup on service"
 CONFIG=test20.conf
 #PREPARE_ASYNC="./utils/websocket_echo -R /tmp -u $USER -t -n echo"
 #PREPARE="./utils/websocket_echo -R /tmp -u $USER -t -D -n echo"

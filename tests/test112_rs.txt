@@ -1,7 +1,7 @@
 HTTP/1.1 200 OK
 X-Test: test
 Content-Type: text/plain
-Content-Length: 715
+Content-Length: 714
 
 Hello world http hello=world
 CONTENT_LENGTH => 14
@@ -14,6 +14,7 @@ SERVER_NAME => www.ouistiti.net
 SERVER_PROTOCOL => HTTP/1.1
 SERVER_ADDR => 127.0.0.1
 SERVER_PORT => 8080
+SERVER_SERVICE => www
 REQUEST_METHOD => GET
 REQUEST_SCHEME => http
 REQUEST_URI => /testpython.py/index

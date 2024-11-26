@@ -1,5 +1,5 @@
 GET /echo2 HTTP/1.1
-HOST: myvhost3
+HOST: myvhost3.ouistiti.net
 Connection: Upgrade,Keep-Alive
 Upgrade: websocket
 Sec-WebSocket-Protocol: echo
