@@ -1,5 +1,4 @@
 HTTP/1.1 201 Created
-Authorization: Basic dGVzdDp0ZXN0
 X-Remote-User: test
 X-Remote-Group: user
 Content-Type: text/json

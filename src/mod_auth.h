@@ -52,7 +52,11 @@ typedef void *(*authz_rule_setup_t)(void *arg);
 typedef const char *(*authz_rule_check_t)(void *arg, const char *user, const char *passwd, const char *token);
 typedef const int (*authz_rule_join_t)(void *arg, const char *user, const char *token, int expire);
 typedef int (*authz_rule_passwd_t)(void *arg, const char *user, const char **passwd);
-typedef int (*authz_rule_setsession_t)(void* arg, const char *user, auth_saveinfo_t cb, void *cbarg);
+/**
+ * @brief returns *disabled* issuers of the current user
+ */
+typedef size_t (*authz_rule_issuer_t)(void *arg, const char *user, char *issuer, size_t length);
+typedef int (*authz_rule_setsession_t)(void* arg, const char *user, const char *toke, auth_saveinfo_t cb, void *cbarg);
 typedef void (*authz_rule_cleanup_t)(void *arg);
 typedef void (*authz_rule_destroy_t)(void *arg);
 typedef struct authz_rules_s authz_rules_t;
@@ -63,6 +67,7 @@ struct authz_rules_s
 	authz_rule_check_t check;
 	authz_rule_join_t join;
 	authz_rule_passwd_t passwd;
+	authz_rule_issuer_t issuer;
 	authz_rule_setsession_t setsession;
 	authz_rule_cleanup_t cleanup;
 	authz_rule_destroy_t destroy;
@@ -82,13 +87,11 @@ typedef enum
 	AUTHZ_TLS_E = 0x200,
 } authz_type_t;
 typedef struct authz_s authz_t;
-typedef size_t (*generatetoken_t)(const mod_auth_t *mod, http_message_t *info, char **token);
 struct authz_s
 {
 	void *ctx;
 	authz_rules_t *rules;
 	authz_type_t type;
-	generatetoken_t generatetoken;
 	string_t name;
 };
 
@@ -132,6 +135,7 @@ typedef enum
 	AUTHN_REDIRECT_E = 0x10,
 	AUTHN_COOKIE_E = 0x20,
 	AUTHN_HEADER_E = 0x40,
+	AUTHN_TOKEN_E = 0x80,
 } authn_type_t;
 
 typedef struct hash_s hash_t;
@@ -154,19 +158,30 @@ struct mod_authn_s
 };
 typedef struct mod_authn_s mod_authn_t;
 
+typedef size_t (*authz_rule_generatetoken_t)(void* arg, http_message_t *request, char **token);
+typedef struct authz_token_config_s authz_token_config_t;
+struct authz_token_config_s
+{
+	enum {
+		E_OUITOKEN,
+		E_JWT,
+	}type;
+	string_t secret;
+	string_t issuer;
+	unsigned int expire;
+};
+
 struct mod_auth_s
 {
 	mod_authn_t authn;
 	mod_authz_t authz;
+	authz_token_config_t token;
 	string_t algo;
-	string_t secret;
 	string_t redirect;
 	string_t token_ep;
 	string_t realm;
-	string_t issuer;
 	const char *protect;
 	const char *unprotect;
-	int expire;
 };
 
 extern const module_t mod_auth;
@@ -179,7 +194,6 @@ int authn_checksignature(const char *key, size_t keylen,
 
 const char *auth_info(http_message_t *request, const char *key, size_t keylen);
 size_t auth_info2(http_message_t *request, const char *key, const char **value);
-int auth_setowner(const char *user);
 
 #ifdef __cplusplus
 }

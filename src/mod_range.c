@@ -50,8 +50,7 @@
 
 int range_connector(void *arg, http_message_t *request, http_message_t *response)
 {
-	document_connector_t *private = httpmessage_private(request, NULL);
-
+	document_connector_t *private = (document_connector_t *)arg;
 	if (private == NULL || private->type & DOCUMENT_DIRLISTING || !(private->fdfile > 0))
 		return EREJECT;
 
@@ -107,7 +106,6 @@ NOSATISFIABLE:
 		int rangelen = snprintf(range, 256, "bytes */%d", filesize);
 		httpmessage_addheader(response, "Content-Range", range, rangelen);
 		httpmessage_result(response, RESULT_416);
-		document_close(private, request);
 	}
 	return ESUCCESS;
 }

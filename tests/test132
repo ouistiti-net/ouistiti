@@ -1,0 +1,6 @@
+DESC="Document: test a request on the root directory"
+CONFIG=test1.conf
+TESTCODE=200
+TESTHEADERLEN=108
+TESTCONTENTLEN=40
+TESTRESPONSE=index_rs.txt

@@ -38,9 +38,9 @@ static int _date_connector(void *arg, http_message_t *request, http_message_t *r
 
 void *mod_date_create(http_server_t *server)
 {
-	httpserver_addconnector(server, _date_connector, NULL, CONNECTOR_DOCFILTER, str_date);
+	httpserver_addconnector(server, _date_connector, NULL, CONNECTOR_SERVER, str_date);
 
-	return -1;
+	return (void *)-1;
 }
 
 void mod_date_destroy(void *mod)
@@ -54,15 +54,12 @@ static int _date_connector(void *arg, http_message_t *request, http_message_t *r
 
 	t = time(NULL);
 	tmp = gmtime(&t);
-	char timestring[26];
+	char timestring[32];
 	int len = -1;
-#ifdef USE_ASCTIME
-	asctime_r(tm, timestring);
-#else
-	len = strftime(timestring, 25, "%a, %d %b %Y %T GMT", tmp);
-#endif
-
-	httpmessage_addheader(response, str_date, timestring, len);
+	len = strftime(timestring, 32, "%a, %d %b %Y %T GMT", tmp);
+	dbg("date: %s", timestring);
+	if (len > 0)
+		httpmessage_addheader(response, str_date, timestring, len);
 	/* reject the request to allow other connectors to set the response */
 	return EREJECT;
 }
@@ -71,7 +68,7 @@ const module_t mod_date =
 {
 	.name = str_date,
 	.create = (module_create_t)mod_date_create,
-	.destroy = mod_datte_destroy,
+	.destroy = mod_date_destroy,
 };
 #ifdef MODULES
 extern module_t mod_info __attribute__ ((weak, alias ("mod_date")));

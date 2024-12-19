@@ -1,9 +1,5 @@
-GET /token?redirect_uri=https://www.ouistiti.local:8080/index.html HTTP/1.1
+GET /index.html HTTP/1.1
 HOST: totp.ouistiti.local
 Connection: Keep-Alive
 Authorization: Basic Zm9vOjEyMzk5NA==
-
-GET /index.html HTTP/1.1
-HOST: www.ouistiti.local
-Cookie: X-Auth-Token=eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ1c2VyIjogImZvbyIsICJob21lIjogIi9ob21lL2ZvbyIsICJzdGF0dXMiOiAiYWN0aXZhdGVkIiwgInJvbGVzIjogInVzZXJzIiwgImV4cCI6IDE4MDB9.1yHoXAbQHFX1KHeaROWLrVsCBdy966dquS1c8un7cKI; SameSite=strict; Path=/; Domain=.ouistiti.net
 

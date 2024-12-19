@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TLS: OPENSSL
-      DEPENDENCIES: libjansson-dev libconfig-dev libssl-dev
+      DEPENDENCIES: libjansson-dev libconfig-dev libssl-dev libsqlite3-dev
     steps:
       - name: install dependencies
         run: |

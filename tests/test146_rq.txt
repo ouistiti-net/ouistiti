@@ -1,0 +1,9 @@
+POST /auth/mngt/foo HTTP/1.1
+HOST: auth.ouistiti.local
+Cookie: X-Auth-Token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoicm9vdCIsImhvbWUiOiIvaG9tZS9yb290Iiwic3RhdHVzIjoiYWN0aXZhdGVkIiwicm9sZXMiOiJyb290IiwiZXhwIjoxODAwLCJpc3MiOiJhdXRocGFzcyt0b3RwIn0.NpyYxQX64hnMlJ-vUYiKUXid-gR86LY_x0J4ZHHWzOc; X-Remote-User=root;
+Authorization: Basic cm9vdDpyb290
+Origin: http://localhost
+Content-Length: 12
+Content-Type: application/x-www-form-urlencoded
+
+issuer=totp

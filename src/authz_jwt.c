@@ -53,29 +53,31 @@
 //#define FILE_MMAP
 #define MAXLENGTH 255
 
-typedef struct authz_jwt_config_s authz_jwt_config_t;
-struct authz_jwt_config_s
-{
-	const char *none;
-};
-
 typedef struct authz_jwt_s authz_jwt_t;
 struct authz_jwt_s
 {
-	authz_jwt_config_t *config;
+	authz_token_config_t *config;
 	const char *token;
 };
 
 #ifdef FILE_CONFIG
-void *authz_jwt_config(const config_setting_t *UNUSED(configauth))
+void *authz_jwt_config(const config_setting_t *configauth)
 {
-	authz_jwt_config_t *authz_config = calloc(1, sizeof(*authz_config));
+	authz_token_config_t *authz_config = calloc(1, sizeof(*authz_config));
+	const char *issuer = NULL;
+
+	int ret = config_setting_lookup_string(configauth, str_issuer, &issuer);
+	if (ret == CONFIG_TRUE)
+	{
+		string_store(&authz_config->issuer, issuer, -1);
+	}
 	return authz_config;
 }
 #endif
 
-size_t authz_generatejwtoken(const mod_auth_t *config, http_message_t *request, char **token)
+size_t authz_jwt_generatetoken(void *arg, http_message_t *request, char **token)
 {
+	const authz_token_config_t *config = (const authz_token_config_t *)arg;
 #ifdef JWT_FORMATHEADER
 	json_t *jheader = json_object();
 	json_object_set(jheader, "alg", json_string("HS256"));
@@ -126,7 +128,7 @@ size_t authz_generatejwtoken(const mod_auth_t *config, http_message_t *request, 
 	else
 		jexpire = json_integer((30 * 60) + now);
 	json_object_set(jtoken, "exp", jexpire);
-	const char *issuer = auth_info(request, STRING_REF("issuer"));
+	const char *issuer = auth_info(request, STRING_REF(str_issuer));
 	if (issuer)
 		json_object_set(jtoken, "iss", json_string(issuer));
 #ifdef AUTH_OPENID
@@ -170,49 +172,51 @@ size_t authz_generatejwtoken(const mod_auth_t *config, http_message_t *request, 
 	return ret;
 }
 
-static json_t *jwt_decode_json(const char *id_token)
+static json_t *jwt_decode_json(const char *id_token, int header)
 {
 	if (id_token == NULL)
 		return NULL;
 	const char *b64header = id_token;
-	const char *b64payload = strchr(b64header, '.');
-	long b64payloadlength = 0;
-	const char *b64signature = strrchr(b64header, '.');
 	int length = 0;
 	json_error_t error;
 	char data[1024] = {0};
+	json_t *jpayload = NULL;
 
-	if (b64payload != NULL)
+	const char *b64payload = strchr(b64header, '.');
+	long b64payloadlength = 0;
+	const char *b64signature = strrchr(b64header, '.');
+	if (b64payload == NULL)
+		return NULL;
+
+	b64payload++;
+	b64payloadlength = b64signature - b64payload;
+
+	if (header)
 	{
-		b64payload++;
-#if 0
+#ifdef AUTHZ_JWT_CHECKHEADER
 		long b64headerlength = 0;
 		b64headerlength = b64payload - b64header;
 		length = base64_urlencoding->decode(b64header, b64headerlength, data, 1024);
-		auth_dbg("id_token header %s", data);
-		json_t *jheader = json_loadb(data, length, 0, &error);
-		if (jheader != NULL)
+		dbg("id_token header %s", data);
+		jpayload = json_loadb(data, length, 0, &error);
+		if (jpayload == NULL)
 		{
-			json_decref(jheader);
-		}
-		else
-		{
-			err("oAuth2 id token error %s", error.text);
+			err("jwt: token error %s", error.text);
 		}
 #endif
-		b64payloadlength = b64signature - b64payload;
 	}
-
-	json_t *jpayload = NULL;
-	length = base64_urlencoding->decode(b64payload, b64payloadlength, data, 1024);
-	auth_dbg("jwt: decode %s", data);
-	jpayload = json_loadb(data, length, 0, &error);
-	if (jpayload == NULL)
-		err("jwt: decode error %s", error.text);
+	else
+	{
+		length = base64_urlencoding->decode(b64payload, b64payloadlength, data, 1024);
+		auth_dbg("jwt: decode %s", data);
+		jpayload = json_loadb(data, length, 0, &error);
+		if (jpayload == NULL)
+			err("jwt: decode error %s", error.text);
+	}
 	return jpayload;
 }
 
-static int _jwt_checkexpiration(json_t *jinfo)
+static int _jwt_checkexpiration(const json_t *jinfo)
 {
 	const json_t *jexpire = json_object_get(jinfo, "exp");
 	if (jexpire && json_is_integer(jexpire))
@@ -221,16 +225,12 @@ static int _jwt_checkexpiration(json_t *jinfo)
 #ifndef DEBUG
 		time_t now = time(NULL);
 #else
-		time_t now = 0;
+		time_t now = 1800; // 30 * 60 (set by default
 #endif
-		if (expire <= now)
+		if (expire < now)
 		{
-			warn("auth: jwt expired");
-#ifndef DEBUG
+			err("auth: jwt expired");
 			return EREJECT;
-#else
-			err("auth: DEBUG is unsecure please rebuild as release");
-#endif
 		}
 	}
 	else
@@ -269,12 +269,12 @@ static const char *_jwt_getuser(const json_t *jinfo)
 /// unused function
 const char *authz_jwt_get(const char *id_token, const char *key)
 {
-	const json_t *jinfo = jwt_decode_json(id_token);
+	const json_t *jinfo = jwt_decode_json(id_token, 0);
 	if (jinfo == NULL)
 		return NULL;
 	if (!strcmp(key, str_user))
 		return _jwt_getuser(jinfo);
-	if (!strcmp(key, "issuer"))
+	if (!strcmp(key, str_issuer))
 		return _jwt_get(jinfo, "iss");
 	return _jwt_get(jinfo, key);
 }
@@ -282,7 +282,7 @@ const char *authz_jwt_get(const char *id_token, const char *key)
 
 int authz_jwt_getinfo(const char *id_token, const char **user, const char **issuer)
 {
-	const json_t *jinfo = jwt_decode_json(id_token);
+	const json_t *jinfo = jwt_decode_json(id_token, 0);
 	if (jinfo == NULL)
 		return -1;
 	*user = _jwt_getuser(jinfo);
@@ -293,7 +293,7 @@ int authz_jwt_getinfo(const char *id_token, const char **user, const char **issu
 static void *authz_jwt_create(http_server_t *UNUSED(server), void *arg)
 {
 	authz_jwt_t *ctx = NULL;
-	authz_jwt_config_t *config = (authz_jwt_config_t *)arg;
+	authz_token_config_t *config = (authz_token_config_t *)arg;
 
 	ctx = calloc(1, sizeof(*ctx));
 	ctx->config = config;
@@ -301,43 +301,77 @@ static void *authz_jwt_create(http_server_t *UNUSED(server), void *arg)
 	return ctx;
 }
 
-static void *authz_jwt_setup(void *arg)
+static int _authn_jwt_checktoken(const authz_token_config_t *config, const char *token, json_t *jinfo)
 {
-	authz_jwt_t *ctx = (authz_jwt_t *)arg;
-
-	authz_jwt_t *cltctx = calloc(1, sizeof(*ctx));
-	return cltctx;
-}
-
-static void authz_jwt_cleanup(void *arg)
-{
-	free(arg);
-}
-
-static const char *_authz_jwt_checktoken(authz_jwt_t *ctx, const char *token)
-{
-	json_t *jinfo = jwt_decode_json(token);
+	int ret = EREJECT;
 	if (jinfo != NULL)
 	{
 		if (_jwt_checkexpiration(jinfo) != ESUCCESS)
-			return NULL;
-		ctx->token = token;
-		return _jwt_getuser(jinfo);
+		{
+			return EREJECT;
+		}
+		const char *issuer = _jwt_get(jinfo, "iss");
+		string_t strissuer = {0};
+		string_store(&strissuer, issuer, -1);
+		if (issuer && string_contain(&strissuer, string_toc(&config->issuer), string_length(&config->issuer), '+'))
+		{
+			err("auth: token with bad issuer: %s / %s", issuer, string_toc(&config->issuer));
+			return EREJECT;
+		}
+		ret = ESUCCESS;
 	}
-	return NULL;
+#ifdef AUTHZ_JWT_CHECKHEADER
+	jinfo = jwt_decode_json(token, 1);
+	if (jinfo != NULL)
+	{
+		const json_t *jtype = json_object_get(jinfo, "typ");
+		if (jtype == NULL || !json_is_string(jtype) || strncmp(json_string_value(jtype), "JWT", 3))
+		{
+			err("auth: token is not jwt");
+			json_decref(jinfo);
+			ret = EREJECT;
+		}
+		const json_t *jalg = json_object_get(jinfo, "alg");
+		if (jalg == NULL || !json_is_string(jalg) || strncmp(json_string_value(jalg), "HS256", 3))
+		{
+			err("auth: jwt support only Hmac sha256");
+			json_decref(jinfo);
+			ret = EREJECT;
+		}
+	}
+	else
+		ret = EREJECT;
+#endif
+	return ret;
+}
+
+int authn_jwt_checktoken(const authz_token_config_t *config, const char *token)
+{
+	json_t *jinfo = jwt_decode_json(token, 0);
+	int ret = _authn_jwt_checktoken(config, token, jinfo);
+	json_decref(jinfo);
+	return ret;
 }
 
 static const char *authz_jwt_check(void *arg, const char *UNUSED(user), const char *UNUSED(passwd), const char *token)
 {
 	authz_jwt_t *ctx = (authz_jwt_t *)arg;
-	return _authz_jwt_checktoken(ctx, token);
+	json_t *jinfo = jwt_decode_json(token, 0);
+	if (_authn_jwt_checktoken(ctx->config, token, jinfo) == ESUCCESS)
+	{
+		ctx->token = token;
+		return _jwt_getuser(jinfo);
+	}
+	json_decref(jinfo);
+	return NULL;
 }
 
-static int authz_jwt_setsession(void *arg, const char *user, auth_saveinfo_t cb, void *cbarg)
+static int authz_jwt_setsession(void *arg, const char *user, const char *token, auth_saveinfo_t cb, void *cbarg)
 {
 	const authz_jwt_t *ctx = (const authz_jwt_t *)arg;
-	const char *token = ctx->token;
-	json_t *jinfo = jwt_decode_json(token);
+	if (token == NULL)
+		token = ctx->token;
+	json_t *jinfo = jwt_decode_json(token, 0);
 	if (jinfo == NULL)
 		return EREJECT;
 
@@ -396,14 +430,13 @@ static int authz_jwt_join(void *arg, const char *user, const char *UNUSED(token)
 static void authz_jwt_destroy(void *arg)
 {
 	authz_jwt_t *ctx = (authz_jwt_t *)arg;
+	free(ctx->config);
 	free(ctx);
 }
 
 authz_rules_t authz_jwt_rules =
 {
 	.create = &authz_jwt_create,
-	.setup = authz_jwt_setup,
-	.cleanup = authz_jwt_cleanup,
 	.check = &authz_jwt_check,
 	.passwd = NULL,
 	.setsession = &authz_jwt_setsession,

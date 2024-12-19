@@ -1,0 +1,6 @@
+DESC="Connection: test more than 10 connections"
+CONFIG=test1.conf
+TESTREQUEST="test004_rq.txt test004_rq.txt test004_rq.txt test004_rq.txt test004_rq.txt test004_rq.txt test004_rq.txt test004_rq.txt test004_rq.txt test004_rq.txt test004_rq.txt"
+TESTCODE=200
+TESTHEADERLEN=108
+TESTCONTENTLEN=40

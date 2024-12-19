@@ -215,7 +215,7 @@ static int _request(_mod_userfilter_t *ctx, const char *method,
 		step = sqlite3_step(statement);
 	}
 	if (step != SQLITE_DONE && ret != ESUCCESS)
-		err("request %d %s", ret, sqlite3_errmsg(ctx->db));
+		err("userfilter: request %d %s", ret, sqlite3_errmsg(ctx->db));
 	sqlite3_finalize(statement);
 	return ret;
 }
@@ -274,7 +274,7 @@ static int _insert_rule(_mod_userfilter_t *ctx, int64_t methodid, int64_t roleid
 	ret = sqlite3_bind_text(statement, index, exp, length, SQLITE_STATIC);
 	SQLITE3_CHECK(ret, EREJECT, sql);
 
-	userfilter_dbg("insert into rules (exp,methodid,roleid) values(%s,%ld,%ld);",
+	userfilter_dbg("userfilter: insert into rules (exp,methodid,roleid) values(%s,%ld,%ld);",
 		exp, methodid, roleid);
 	int step = sqlite3_step(statement);
 	if (step == SQLITE_DONE)

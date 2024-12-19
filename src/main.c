@@ -36,6 +36,7 @@
 #include <libgen.h>
 #include <sched.h>
 #include <dirent.h>
+#include <limits.h>
 #ifdef BACKTRACE
 #include <execinfo.h> // for backtrace
 #endif
@@ -72,35 +73,110 @@ char str_hostname[HOST_NAME_MAX + 7];
 
 #define MAX_STRING 256
 
-static size_t _string_len(string_t *str, const char *pointer)
+size_t string_length(const string_t *str)
 {
-	if (str->size == 0) str->size = MAX_STRING;
-	return strnlen(pointer, str->size);
+	if (str->data && str->length == (size_t) -1)
+		((string_t*)str)->length = strnlen(str->data, MAX_STRING);
+	return str->length;
 }
 
-int _string_store(string_t *str, const char *pointer, size_t length)
+int string_store(string_t *str, const char *pointer, size_t length)
 {
 	str->data = pointer;
-	if (pointer && length == (size_t) -1)
-		str->length = _string_len(str, pointer);
-	else
-		str->length = length;
+	/// set length and check if value is -1
+	str->length = length;
+	str->length = string_length(str);
 	str->size = str->length + 1;
+	if (str->data == NULL)
+	{
+		str->length = 0;
+		str->size = 0;
+	}
 	return ESUCCESS;
 }
 
-int _string_cmp(const string_t *str, const char *cmp, size_t length)
+int string_cmp(const string_t *str, const char *cmp, size_t length)
 {
+	if (cmp == NULL)
+		return -1;
 	if ((length != (size_t) -1) && (length != str->length))
-		return EREJECT;
+		return (length - str->length);
 	return strncasecmp(str->data, cmp, str->length);
 }
 
-int _string_empty(const string_t *str)
+int string_contain(const string_t *str, const char *cmp, size_t length, const char sep)
 {
-	return ! (str->data != NULL && str->data[0] != '\0');
+	int ret = -1;
+	if (cmp == NULL)
+		return -1;
+	if (length == (size_t) -1)
+		length = strnlen(cmp, str->length);
+	const char *offset = str->data;
+	while (offset && offset[0] != '\0')
+	{
+		if (!strncasecmp(offset, cmp, length))
+		{
+			ret = 0;
+			break;
+		}
+		offset = strchr(offset, sep);
+		if (offset)
+			offset++;
+	}
+	return ret;
 }
 
+int string_empty(const string_t *str)
+{
+	return ! (str->data != NULL && str->data[0] != '\0' && str->length > 0);
+}
+
+int string_cpy(string_t *str, const char *source, size_t length)
+{
+	if (str->data == NULL)
+		return EREJECT;
+	if ((length == (size_t) -1) || (length > INT_MAX))
+		str->length = snprintf((char *)str->data, str->size, "%s", source);
+	else
+		str->length = snprintf((char *)str->data, str->size, "%.*s", (int)length, source);
+	return str->length;
+}
+
+const char *string_toc(const string_t *str)
+{
+	return str->data;
+}
+
+int ouimessage_REQUEST(http_message_t *message, const char *key, string_t *value)
+{
+	const char *data = NULL;
+	size_t datalen = httpmessage_REQUEST2(message, key, &data);
+	if (data == NULL)
+		return EREJECT;
+	string_store(value, data, datalen);
+	return ESUCCESS;
+}
+
+int ouimessage_SESSION(http_message_t *message, const char *key, string_t *value)
+{
+	void *data = NULL;
+	size_t datalen = httpmessage_SESSION2(message, key, &data);
+	if (data == NULL)
+		return EREJECT;
+	string_store(value, data, datalen);
+	return ESUCCESS;
+}
+
+int ouimessage_parameter(http_message_t *message, const char *key, string_t *value)
+{
+	const char *data = NULL;
+	size_t datalen = httpmessage_parameter(message, key, &data);
+	if (data == NULL)
+		return EREJECT;
+	string_store(value, data, datalen);
+	return ESUCCESS;
+}
+/******************************************************************************/
 const char *auth_info(http_message_t *request, const char *key, size_t keylen)
 {
 	return httpclient_session(httpmessage_client(request), key, keylen, NULL, -1);
@@ -111,7 +187,7 @@ size_t auth_info2(http_message_t *request, const char *key, const char **value)
 	return httpmessage_SESSION2(request, key, (void **)value);
 }
 
-int auth_setowner(const char *user)
+int ouistiti_setprocessowner(const char *user)
 {
 	int ret = EREJECT;
 #ifdef HAVE_PWD
@@ -187,7 +263,10 @@ static int main_initat(int rootfd, const char *path, int action)
 {
 	struct stat filestat = {0};
 	if (fstatat(rootfd, path, &filestat, 0) != 0)
+	{
+		err("main: file %s not found %m", path);
 		return EREJECT;
+	}
 	if (S_ISDIR(filestat.st_mode))
 	{
 		struct dirent **namelist;
@@ -204,14 +283,16 @@ static int main_initat(int rootfd, const char *path, int action)
 			}
 			free(namelist[n]);
 		}
+		free(namelist);
 		close(newrootfd);
-
 	}
 	else if (faccessat(rootfd, path, X_OK, 0) == 0)
 	{
-		warn("%s %s script", actions[action], path);
+		warn("main: %s %s script", actions[action], path);
 		main_exec(rootfd, path, action);
 	}
+	else
+		err("main: %s is not executable", path);
 
 	return ESUCCESS;
 }
@@ -254,7 +335,51 @@ void display_help(char * const *argv)
 	fprintf(stderr, "\t-D \t\tto daemonize the server\n");
 	fprintf(stderr, "\t-K \t\tto kill other instances of the server\n");
 	fprintf(stderr, "\t-s <server num>\tselect a server into the configuration file\n");
-	fprintf(stderr, "\t-W <directory>\tset the working directory\n");
+	fprintf(stderr, "\t-W <directory>\tset the working directory as chroot\n");
+}
+
+static int _ouistiti_chown(int fd, const char *owner)
+{
+#ifdef HAVE_PWD
+	struct passwd *pw;
+	pw = getpwnam(owner);
+	if (pw != NULL)
+	{
+		return fchown(fd, pw->pw_uid, pw->pw_gid);
+	}
+#endif
+	return -1;
+}
+static const char *g_logfile = NULL;
+static int g_logfd = 0;
+size_t g_logmax = 1024 * 1024;
+int ouistiti_setlogfile(const char *logfile, size_t logmax, const char *owner)
+{
+	if (g_logfile != NULL)
+		logfile = g_logfile;
+	if (logfile != NULL && logfile[0] != '\0' && logfile[0] != '-')
+	{
+		const char *logmaxenv = getenv("LOG_MAXFILESIZE");
+		if (logmaxenv)
+			logmax = strtoul(logmaxenv, NULL, 10);
+		if (logmax)
+			g_logmax = logmax;
+		g_logfile = logfile;
+		g_logfd = open(logfile, O_WRONLY | O_CREAT | O_TRUNC, 00660);
+		if (g_logfd > 0)
+		{
+			if (owner && _ouistiti_chown(g_logfd, owner) == -1)
+				warn("main: impossible to change logfile owner");
+			dup2(g_logfd, 1);
+			dup2(g_logfd, 2);
+			close(g_logfd);
+		}
+		else
+			err("log file error %s", strerror(errno));
+	}
+	else
+		g_logfile = NULL;
+	return (g_logfd > 0);
 }
 
 #undef BACKTRACE
@@ -287,7 +412,8 @@ static void handler(int sig)
 		exit(1);
 #endif
 	}
-	run = 'q';
+	if (sig != SIGPIPE)
+		run = 'q';
 }
 
 http_server_t *ouistiti_httpserver(server_t *server)
@@ -432,20 +558,28 @@ static server_t *ouistiti_loadserver(serverconfig_t *config, int id)
 	server->server = httpserver;
 	server->config = config;
 	server->id = id;
-	char *cwd = NULL;
+	char cwd[PATH_MAX] = {0};
 	if (config->root != NULL && config->root[0] != '\0' )
 	{
-		cwd = getcwd(NULL, 0);
+		getcwd(cwd, PATH_MAX);
 		if (chdir(config->root))
-			err("main: change directory error !");
+			err("main: change %s directory error !", config->root);
 	}
-	ouistiti_setmodules(server, NULL, config->modulesconfig);
-	if (cwd != NULL)
+#ifdef DEBUG
+	char pwd[PATH_MAX];
+	dbg("main: ouistiti running environment %s", getcwd(pwd, PATH_MAX));
+	struct dirent **namelist;
+	int n = scandir(".", &namelist, NULL, alphasort);
+	while (n-- > 0)
 	{
-		if (chdir(cwd))
-			err("main: change directory error !");
-		free(cwd);
+		dbg("\t%s", namelist[n]->d_name);
+		free(namelist[n]);
 	}
+	free(namelist);
+#endif
+	ouistiti_setmodules(server, NULL, config->modulesconfig);
+	if (cwd[0] && chdir(cwd))
+		err("main: change directory error !");
 
 	return server;
 }
@@ -492,10 +626,16 @@ static int main_run(server_t *first)
 		httpserver_connect(server->server);
 	}
 
-	while(run != 'q')
+	while(run != 'q' && first != NULL && first->server != NULL)
 	{
-		if (first == NULL || first->server == NULL || httpserver_run(first->server) == ESUCCESS)
+		if (httpserver_run(first->server) != ECONTINUE)
 			break;
+		struct stat logstat = {0};
+		if (g_logfile && !stat(g_logfile, &logstat) && (logstat.st_size > g_logmax))
+		{
+			ouistiti_setlogfile(g_logfile, g_logmax, NULL);
+			warn("main: reset logfile");
+		}
 	}
 	return 0;
 }
@@ -571,7 +711,7 @@ int main(int argc, char * const *argv)
 	int opt;
 	do
 	{
-		opt = getopt(argc, argv, "s:f:p:P:hDKCVM:W:");
+		opt = getopt(argc, argv, "s:f:p:P:hDKCVM:W:L:");
 		switch (opt)
 		{
 			case 's':
@@ -607,6 +747,9 @@ int main(int argc, char * const *argv)
 			case 'W':
 				 workingdir = optarg;
 			break;
+			case 'L':
+				 g_logfile = optarg;
+			break;
 			default:
 			break;
 		}
@@ -630,12 +773,6 @@ int main(int argc, char * const *argv)
 		return 0;
 	}
 
-	if (workingdir != NULL && chdir(workingdir) != 0)
-	{
-		err("%s directory is not accessible", workingdir);
-		return 1;
-	}
-
 	ouistiti_initmodules(pkglib);
 #ifdef MODULES
 	const char *modules_path = getenv("OUISTITI_MODULES_PATH");
@@ -657,6 +794,19 @@ int main(int argc, char * const *argv)
 		return 0;
 	}
 
+	if (workingdir != NULL)
+	{
+		if (chroot(workingdir) == 0)
+		{
+			warn("main: daemon run inside sandbox");
+		}
+		else if (chdir(workingdir) != 0)
+		{
+			err("%s directory is not accessible", workingdir);
+			return 1;
+		}
+	}
+
 	if (ouistiticonfig->init_d != NULL)
 	{
 		int rootfd = AT_FDCWD;
@@ -676,11 +826,9 @@ int main(int argc, char * const *argv)
 	sigaction(SIGSEGV, &action, NULL);
 #endif
 
-#if 0
 	struct sigaction unaction;
 	unaction.sa_handler = SIG_IGN;
-#endif
-	sigaction(SIGPIPE, &action, NULL);
+	sigaction(SIGPIPE, &unaction, NULL);
 #else
 	signal(SIGTERM, handler);
 	signal(SIGINT, handler);
@@ -691,7 +839,7 @@ int main(int argc, char * const *argv)
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
-	if (ouistiticonfig->user == NULL || auth_setowner(ouistiticonfig->user) == EREJECT)
+	if (ouistiticonfig->user == NULL || ouistiti_setprocessowner(ouistiticonfig->user) == EREJECT)
 		err("Error: user %s not found", ouistiticonfig->user);
 	else
 		warn("%s run as %s", argv[0], ouistiticonfig->user);
@@ -707,5 +855,7 @@ int main(int argc, char * const *argv)
 	}
 	ouistiticonfig_destroy(ouistiticonfig);
 	warn("good bye");
+	if (g_logfd > 0)
+		close(g_logfd);
 	return 0;
 }

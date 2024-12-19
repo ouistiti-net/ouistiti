@@ -1,4 +1,5 @@
 DESC="Auth Basic from database: no password"
+rm $PWD/tests/conf/passwd.db
 CONFIG=test12.conf
 TESTREQUEST=test004_rq.txt
 TESTCODE=302

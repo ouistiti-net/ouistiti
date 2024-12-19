@@ -7,6 +7,12 @@ MAXCHUNKS_CONTENT=3
 MAXCHUNKS_SESSION=70
 MAXCHUNKS_URI=2
 HTTPMESSAGE_CHUNKSIZE=128
+HTTPMESSAGE_KEEPALIVE_ENABLED=n
+HTTPCLIENT_FEATURES=n
+HTTPCLIENT_DUMPSOCKET=n
+
+#define string API value
+STRING_MAXLENGTH=HTTPMESSAGE_CHUNKSIZE*MAXCHUNKS_URI
 
 #select FILE_CONFIG to use a configuration file
 #or modify src/config.h
@@ -29,6 +35,8 @@ USE_REENTRANT=y
 USE_EXECVEAT=n
 USE_POLL=y
 USE_PTHREAD=n
+
+LOG_MAXFILESIZE=1048576
 
 # libraries  configuration:
 LIBWEBSOCKET=y
@@ -70,6 +78,7 @@ AUTHZ_FILE=y
 AUTHZ_UNIX=n
 AUTHZ_SQLITE=n
 AUTHZ_JWT=n
+AUTHZ_JWT_CHECKHEADER=n
 AUTHZ_TOTP=n
 AUTHZ_MANAGER=n
 #support of the websocket
@@ -102,6 +111,15 @@ UPGRADE=y
 UPGRADE_INET=n
 #support for filter uri select by user
 USERFILTER=n
+#support of simple python scripts (staging)
+PYTHON=n
+#support of request forwarding
+#   depends on HTTPCLIENT_FEATURES
+FORWARD=n
+#support date field
+DATE=y
+#support of response's signature rfc9421
+SIGNATURE=n
 
 CERTIFICATE=n
 

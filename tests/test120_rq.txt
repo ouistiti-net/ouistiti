@@ -1,28 +1,30 @@
 GET /index.html HTTP/1.1
+HOST: www.ouistiti.local
+Connection: Keep-Alive
+
+GET /token?redirect_uri=https://www.ouistiti.local:8080/index.html HTTP/1.1
 HOST: auth.ouistiti.local
 Connection: Keep-Alive
 
-GET /trust/signin.html?redirect_uri=https://www.ouistiti.local:8080/index.html HTTP/1.1
+GET /trust/signin.html?step=passwd&redirect_uri=https://www.ouistiti.local:8080/index.html HTTP/1.1
 HOST: auth.ouistiti.local
 Connection: Keep-Alive
 
-GET /token?redirect_uri=/index.html HTTP/1.1
+GET /token?redirect_uri=https://www.ouistiti.local:8080/index.html HTTP/1.1
 HOST: auth.ouistiti.local
 Connection: Keep-Alive
 Authorization: Basic Zm9vOmJhcg==
 
 GET /trust/signin.html?step=totp&redirect_uri=https://www.ouistiti.local:8080/index.html HTTP/1.1
 HOST: auth.ouistiti.local
-Cookie: X-Auth-Token=eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ1c2VyIjogImZvbyIsICJob21lIjogIi9ob21lL2ZvbyIsICJzdGF0dXMiOiAiYWN0aXZhdGVkIiwgInJvbGVzIjogInVzZXJzIiwgImF1dGhfdHlwZSI6ICJCYXNpYyIsICJleHAiOiAxODAwLCAiaXNzIjogInNxbGl0ZSJ9.Jyedn8kHUH5_DZ97ya1iBrssDvHmqdHcih7Mswp80RM; SameSite=strict; Path=/; Domain=.ouistiti.net
 Connection: Keep-Alive
+Authorization: Basic Zm9vOmJhcg==
 
-GET /token_totp?redirect_uri=/index.html HTTP/1.1
+POST /token_totp?redirect_uri=https://www.ouistiti.local:8080/index.html HTTP/1.1
 HOST: auth.ouistiti.local
-Cookie: X-Auth-Token=eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ1c2VyIjogImZvbyIsICJob21lIjogIi9ob21lL2ZvbyIsICJzdGF0dXMiOiAiYWN0aXZhdGVkIiwgInJvbGVzIjogInVzZXJzIiwgImF1dGhfdHlwZSI6ICJCYXNpYyIsICJleHAiOiAxODAwLCAiaXNzIjogInNxbGl0ZSJ9.Jyedn8kHUH5_DZ97ya1iBrssDvHmqdHcih7Mswp80RM; SameSite=strict; Path=/; Domain=.ouistiti.net
 Connection: Keep-Alive
-Authorization: Basic Zm9vOjEyMzk5NA==
+Authorization: Basic Zm9vOmJhcg==
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 30
 
-GET /index.html HTTP/1.1
-HOST: auth.ouistiti.local
-Cookie: X-Auth-Token=eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ1c2VyIjogImZvbyIsICJob21lIjogIi9ob21lL2ZvbyIsICJzdGF0dXMiOiAiYWN0aXZhdGVkIiwgInJvbGVzIjogInVzZXJzIiwgImV4cCI6IDE4MDAsICJpc3MiOiAic3FsaXRlK3RvdHAgIn0.mIFxZpCv49pK1mjv4Tvi4HoD035yAYYd7boVtWPLslw; SameSite=strict; Path=/; Domain=.ouistiti.net
-
+username=foo&password=123994

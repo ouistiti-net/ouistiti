@@ -89,8 +89,8 @@ static const char *authn_bearer_check(void *arg, authz_t *authz, const char *met
 		size_t datalen = sign - data;
 		sign++;
 		signlen -= sign - string;
-		const char *key = mod->authn->config->secret.data;
-		size_t keylen = mod->authn->config->secret.length;
+		const char *key = mod->authn->config->token.secret.data;
+		size_t keylen = mod->authn->config->token.secret.length;
 		if (authn_checksignature(key, keylen, data, datalen, sign, signlen) == ESUCCESS)
 		{
 			user = authz->rules->check(authz->ctx, NULL, NULL, string);

@@ -80,7 +80,7 @@ static int _websocket_connect(int client, int socket)
 	return sendmsg(client, &msg, MSG_DONTWAIT);
 }
 
-int ouistiti_websocket_run(void *arg, int sock, int wssock, http_message_t *request)
+int ouistiti_websocket_run(void *arg, int sock, int wssock, http_client_t *clt)
 {
 	int ret = EREJECT;
 	if (_websocket_connect(wssock, sock) > 0)

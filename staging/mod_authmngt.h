@@ -55,13 +55,15 @@ typedef struct authsession_s
 
 typedef int (*authmngt_userlist_t)(void*arg, int nfields, char** values,char** keys);
 
-typedef void *(*authmngt_rule_create_t)(http_server_t *server, void *config);
+typedef void *(*authmngt_rule_create_t)(http_client_t *client, void *config);
 typedef int (*authmngt_rule_setsession_t)(void* arg, const char *user, authsession_t *info);
 typedef int (*authmngt_rule_getuser_t)(void* arg, int id, authsession_t *info);
 typedef int (*authmngt_rule_adduser_t)(void *arg, authsession_t *newuser);
 typedef int (*authmngt_rule_changepasswd_t)(void *arg, authsession_t *newuser);
 typedef int (*authmngt_rule_changeinfo_t)(void *arg, authsession_t *user);
 typedef int (*authmngt_rule_removeuser_t)(void *arg, authsession_t *olduser);
+typedef size_t (*authz_sqlite_issuer_t)(void *arg, const char *user, char *issuer, size_t length);
+typedef int (*authmngt_sqlite_setissuer_t)(void *arg, const char * user, const char *issuer, size_t length);
 typedef void (*authmngt_rule_destroy_t)(void *arg);
 typedef struct authmngt_rules_s authmngt_rules_t;
 struct authmngt_rules_s
@@ -73,6 +75,8 @@ struct authmngt_rules_s
 	authmngt_rule_changepasswd_t changepasswd;
 	authmngt_rule_changeinfo_t changeinfo;
 	authmngt_rule_removeuser_t removeuser;
+	authz_sqlite_issuer_t issuer;
+	authmngt_sqlite_setissuer_t setissuer;
 	authmngt_rule_destroy_t destroy;
 };
 
@@ -84,10 +88,18 @@ struct authmngt_s
 	const char *name;
 };
 
+typedef struct mod_authmngt_issuer_s mod_authmngt_issuer_t;
+struct mod_authmngt_issuer_s
+{
+	string_t name;
+	mod_authmngt_issuer_t *next;
+};
+
 typedef struct mod_authmngt_s mod_authmngt_t;
 struct mod_authmngt_s
 {
 	authmngt_t mngt;
+	mod_authmngt_issuer_t *issuers;
 };
 
 extern const module_t mod_authmngt;

@@ -1,0 +1,4 @@
+DESC="test a request with an REQUEST part length 130"
+CONFIG=test1.conf
+TESTCODE=301
+TESTRESPONSE=error404_redirect_rs.txt

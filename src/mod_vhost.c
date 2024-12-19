@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <limits.h>
 
 #ifdef MODULES
 #include <dlfcn.h>
@@ -57,6 +58,8 @@ struct mod_vhost_s
 {
 	/** @param name of the server */
 	http_server_config_t vserver;
+	string_t vhost;
+	string_t vservice;
 	serverconfig_t serverconfig;
 	server_t *server;
 	void *modulesconfig;
@@ -76,25 +79,47 @@ static int _vhost_connector(void *arg, http_message_t *request, http_message_t *
 {
 	_mod_vhost_t *mod = (_mod_vhost_t *)arg;
 
-	const char *vhost = httpmessage_REQUEST(request, "host");
-	if (vhost == NULL || strcmp(vhost, mod->config->vserver.hostname))
-		return EREJECT;
-	warn("vhost: connection on %s", mod->config->vserver.hostname);
-	return httpserver_reloadclient(mod->vserver, httpmessage_client(request));
+	const char *vhost = NULL;
+	size_t vhostlength = httpmessage_REQUEST2(request, "host", &vhost);
+	if (vhost != NULL)
+	{
+		if (mod->config->vserver.hostname && !string_cmp(&mod->config->vhost, vhost, vhostlength))
+		{
+			warn("vhost: connection on %s", mod->config->vserver.hostname);
+			httpserver_reloadclient(mod->vserver, httpmessage_client(request));
+			return EREJECT;
+		}
+		const char *dot = strchr(vhost, '.');
+		if (dot != NULL && mod->config->vserver.hostname == NULL &&
+			mod->config->vserver.service &&
+			!string_cmp(&mod->config->vservice, vhost, dot - vhost))
+		{
+			warn("vhost: connection on %s", mod->config->vserver.service);
+			httpserver_reloadclient(mod->vserver, httpmessage_client(request));
+			return EREJECT;
+		}
+	}
+	return EREJECT;
 }
 
 static int _vhost_vconnector(void *arg, http_message_t *request, http_message_t *response)
 {
 	_mod_vhost_t *mod = (_mod_vhost_t *)arg;
 
-	const char *vhost = httpmessage_REQUEST(request, "host");
-	if (vhost == NULL || strcmp(vhost, mod->config->vserver.hostname))
+	const char *vhost = NULL;
+	size_t vhostlength = httpmessage_REQUEST2(request, "host", &vhost);
+	if (vhost != NULL)
 	{
-		err("vhost: accesss to another host on the same client");
-		httpmessage_result(response, RESULT_500);
-		return ESUCCESS;
+		const char *dot = strchr(vhost, '.');
+		if (mod->config->vserver.hostname && !string_cmp(&mod->config->vhost, vhost, vhostlength))
+			return EREJECT;
+		else if (dot != NULL && mod->config->vserver.hostname == NULL && mod->config->vserver.service &&
+			!string_cmp(&mod->config->vservice, vhost, dot - vhost))
+			return EREJECT;
 	}
-	return EREJECT;
+	err("vhost: accesss to another host on the same client");
+	httpmessage_result(response, RESULT_500);
+	return ESUCCESS;
 }
 
 #ifdef FILE_CONFIG
@@ -104,7 +129,10 @@ static mod_vhost_t *_vhost_config(config_setting_t *config, server_t *server, co
 
 	char *hostname = NULL;
 	config_setting_lookup_string(config, "hostname", (const char **)&hostname);
-	if (hostname == NULL || hostname[0] == '\0')
+	char *service = NULL;
+	config_setting_lookup_string(config, "service", (const char **)&service);
+	if ((hostname == NULL || hostname[0] == '\0') &&
+		(service == NULL || service[0] == '\0'))
 	{
 		err("vhost configuration without hostname");
 		return NULL;
@@ -113,7 +141,11 @@ static mod_vhost_t *_vhost_config(config_setting_t *config, server_t *server, co
 	vhost->server = server;
 //	memcpy(&vhost->vserver, ouistiti_serverconfig(server), sizeof(vhost->vserver));
 	vhost->vserver.hostname = hostname;
-	config_setting_lookup_string(config, "service", (const char **)&vhost->vserver.service);
+	if (hostname)
+		string_store(&vhost->vhost, hostname, -1);
+	vhost->vserver.service = service;
+	if (service)
+		string_store(&vhost->vservice, service, -1);
 	config_setting_lookup_string(config, "root", (const char **)&vhost->root);
 	vhost->modulesconfig = config;
 	warn("vhostname %s %s", hostname, vhost->vserver.service);
@@ -236,37 +268,37 @@ static void *mod_vhost_create(http_server_t *server, mod_vhost_t *config)
 	httpserver_addconnector(server, _vhost_connector, mod, CONNECTOR_SERVER, str_vhost);
 	httpserver_addconnector(mod->vserver, _vhost_vconnector, mod, CONNECTOR_SERVER, str_vhost);
 
-	char *cwd = NULL;
+	char cwd[PATH_MAX] = {0};
 	if (config->root != NULL && config->root[0] != '\0' )
 	{
 		warn("vhost: change directory %s", config->root);
-		cwd = getcwd(NULL, 0);
+		getcwd(cwd, PATH_MAX);
 		if (chdir(config->root))
-			err("vhost: change directory error !");
-	}
-	const module_list_t *iterator = ouistiti_modules(config->server);
-	while (iterator != NULL)
-	{
-		if (strcmp(iterator->module->name, str_vhost))
 		{
-			mod_t *entry = mod_vhost_loadmodule(mod, iterator->module);
-			if (entry)
-			{
-				mod_t *last = entry;
-				while (last->next) last = last->next;
-				last->next = mod->modules;
-				mod->modules = entry;
-			}
+			err("vhost: change directory error !");
+			httpserver_destroy(mod->vserver);
+			free(mod);
+			return NULL;
 		}
-		iterator = iterator->next;
 	}
-	if (cwd != NULL)
+
+	for (const module_list_t *iterator = ouistiti_modules(config->server);
+		iterator != NULL; iterator = iterator->next)
 	{
-		warn("vhost: change directory %s", cwd);
-		if (chdir(cwd))
-			err("main: change directory error !");
-		free(cwd);
+		if (!strcmp(iterator->module->name, str_vhost))
+			continue;
+		mod_t *entry = mod_vhost_loadmodule(mod, iterator->module);
+		if (entry)
+		{
+			mod_t *last = entry;
+			while (last->next) last = last->next;
+			last->next = mod->modules;
+			mod->modules = entry;
+		}
 	}
+	warn("vhost: change directory %s", cwd);
+	if (cwd[0] && chdir(cwd))
+		err("vhost: change directory error !");
 
 	dbg("create vhost for %s", config->vserver.hostname);
 

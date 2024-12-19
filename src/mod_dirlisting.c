@@ -107,7 +107,6 @@ static int _dirlisting_connectorheader(document_connector_t *private, http_messa
 			free(private->ents);
 			private->ents = NULL;
 			private->nbents = 0;
-			document_close(private, request);
 			ret = ESUCCESS;
 		}
 		else
@@ -126,7 +125,6 @@ static int _dirlisting_connectorheader(document_connector_t *private, http_messa
 		private->ents = NULL;
 		private->nbents = 0;
 		warn("dirlisting: directory not open %s %s", private->url, strerror(errno));
-		document_close(private, request);
 		httpmessage_result(response, RESULT_400);
 	}
 
@@ -229,7 +227,6 @@ static int _dirlisting_connectorender(document_connector_t *private, http_messag
 	httpclient_shutdown(httpmessage_client(request));
 	free(private->ents);
 	private->ents = NULL;
-	document_close(private, request);
 	return ESUCCESS;
 }
 
@@ -239,7 +236,7 @@ static int _dirlisting_connectorender(document_connector_t *private, http_messag
 int dirlisting_connector(void *arg, http_message_t *request, http_message_t *response)
 {
 	int ret = EREJECT;
-	document_connector_t *private = httpmessage_private(request, NULL);
+	document_connector_t *private = (document_connector_t *)arg;
 
 	if (private->ents == NULL)
 	{

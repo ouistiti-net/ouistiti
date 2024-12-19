@@ -113,7 +113,7 @@ static int _server_connector(void *arg, http_message_t *request, http_message_t 
 	}
 	if (!(options & SECURITY_CACHE))
 	{
-		httpmessage_addheader(response, "Cache-Control", STRING_REF("no-cache,no-store,max-age=0,must-revalidate"));
+		httpmessage_addheader(response, str_cachecontrol, STRING_REF("no-cache,no-store,max-age=0,must-revalidate"));
 		httpmessage_addheader(response, "Pragma", STRING_REF("no-cache"));
 		httpmessage_addheader(response, "Expires", STRING_REF("0"));
 	}
@@ -165,7 +165,7 @@ static void *mod_server_create(http_server_t *server, void *config)
 
 	mod->config = config;
 	mod->server = server;
-	httpserver_addconnector(server, _server_connector, mod, CONNECTOR_SERVER, str_server);
+	httpserver_addconnector(server, _server_connector, mod, CONNECTOR_FILTER, str_server);
 
 	return mod;
 }

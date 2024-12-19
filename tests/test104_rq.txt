@@ -1,5 +1,5 @@
 GET /index.html HTTP/1.1
-HOST: myvhost
+HOST: myvhost.ouistiti.net
 Authorization: Basic Zm9vOmJhcg==
 Upgrade-Insecure-Requests: 1
 

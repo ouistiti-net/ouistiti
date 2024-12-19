@@ -1,4 +1,5 @@
 from ouistiti import HttpResponse, HttpRequest
+import sys
 #import os
 
 #os.environ.setdefault('DJANGO_SETTINGS_MODULE', "settings")
@@ -10,10 +11,8 @@ def index(request):
         if meta != "DOCUMENT_ROOT":
             message += meta + " => "+ request.META[meta] + '\n'
     message += '\n'
-    message += request.body
+    message += request.body.decode("utf-8")
     response = HttpResponse(bytes(message , 'utf-8'), content_type="text/plain")
-    response["Content-Length"] = len(response.content)
-    print(len(response.content))
     response["X-Test"] = "test"
     return response
 

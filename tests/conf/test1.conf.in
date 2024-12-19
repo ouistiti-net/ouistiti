@@ -47,6 +47,12 @@ servers= ({
 				#destination = "http://clients1.google.com/generate_204";
 			});
 		};
+		signature = {
+			components = ("content-type", "content-length");
+			key = "tempo";
+			allow = "_signed";
+			denylast = true;
+		};
 	});
 
 

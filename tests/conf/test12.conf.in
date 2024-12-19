@@ -9,11 +9,36 @@ servers= ({
 		version="HTTP11";
 		vhost =({
 			hostname = "auth.ouistiti.local";
-			service = "ouistitiauth";
+			service = "auth";
 			auth = {
 				type = "Basic";
 				dbname="%PWD%/tests/conf/passwd.db";
-				options = "token,cookie";
+				options = "jwt,cookie,management";
+				secret = "kXp2s5v8y/B?E(H+KbPeShVmYq3t6w9z";
+				unprotect = "^/trust/*";
+				signin = "/trust/signin.html";
+				algorithm = "SHA-256";
+			};
+			redirect = {
+				links = ({
+					options = "query,temporary";
+					origin = "^/token";
+				});
+			};
+			document = {
+				docroot = "%PWD%/tests/htdocs";
+				allow = "signin.html,.css,.js,";
+				deny = ".htaccess,.php";
+			};
+			cors = {
+				origin = "localhost,ouistiti";
+			};
+		},{
+			service = "totp";
+			auth = {
+				type = "Basic";
+				authz = "totp";
+				options = "jwt,cookie";
 				secret = "kXp2s5v8y/B?E(H+KbPeShVmYq3t6w9z";
 				unprotect = "^/trust/*";
 				signin = "/trust/signin.html";
@@ -33,37 +58,20 @@ servers= ({
 				origin = "localhost,ouistiti";
 			};
 		},{
-			hostname = "totp.ouistiti.local";
-			service = "ouistititoto";
+			hostname = "badauth.ouistiti.local";
 			auth = {
-				type = "Basic";
-				authz = "totp";
-				options = "token,cookie";
-				secret = "kXp2s5v8y/B?E(H+KbPeShVmYq3t6w9z";
-				unprotect = "^/trust/*";
-				signin = "/trust/signin.html";
-			};
-			redirect = {
-				links = ({
-					options = "query,temporary";
-					origin = "^/token";
-				});
-			};
-			document = {
-				docroot = "%PWD%/tests/htdocs";
-				allow = "signin.html,.css,.js,";
-				deny = ".htaccess,.php";
-			};
-			cors = {
-				origin = "localhost,ouistiti";
+				type="Bearer";
+				authz = "jwt";
+				options = "jwt,cookie";
 			};
 		});
 		auth = {
 			type="Bearer";
 			authz = "jwt";
-			options = "token,cookie";
+			options = "cookie";
 			secret = "kXp2s5v8y/B?E(H+KbPeShVmYq3t6w9z";
 			signin = "http://auth.ouistiti.local:8080/token";
+			issuer = "sqlite+totp";
 		};
 		userfilter = {
 			dbname = "%PWD%/tests/conf/filter.db";
@@ -75,6 +83,10 @@ servers= ({
 			docroot = "%PWD%/tests/htdocs";
 			allow = ".html,.htm,.css,.js,.txt,*";
 			deny = ".htaccess,.php";
+		};
+		cgi = {
+			docroot = "%PWD%/tests/htdocs";
+			allow = ".cgi";
 		};
 		redirect = {
 			links = ({

@@ -39,6 +39,10 @@ typedef void mod_cookie_t;
 
 extern const module_t mod_cookie;
 
+const char *cookie_get(http_message_t *request, const string_t *key);
+int cookie_get2(http_message_t *request, const string_t *key, string_t *cookie);
+int cookie_set(http_message_t *response, const string_t *key, const string_t *value, ...);
+
 #ifdef __cplusplus
 }
 #endif

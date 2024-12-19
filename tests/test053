@@ -1,3 +1,4 @@
 DESC="Auth Basic from database: good password"
 CONFIG=test12.conf
+TESTREQUEST="test053_rq.txt test053b_rq.txt"
 TESTCODE=307

@@ -11,19 +11,50 @@ servers= ({
 			hostname = "auth.ouistiti.local";
 			service = "ouistitiauth";
 			auth = ({
-				type = "Basic";
-				dbname="%PWD%/tests/conf/passwd.db";
-				options = "token,cookie";
+				type = "none";
 				secret = "kXp2s5v8y/B?E(H+KbPeShVmYq3t6w9z";
-				unprotect = "^/trust/*";
-				signin = "/trust/signin.html";
+				options = "jwt";
+				issuer = "authpass+totp";
 			},{
 				type = "Basic";
+				dbname="%PWD%/tests/conf/passwd.db";
+				unprotect = "^/trust/*";
+				signin = "/trust/signin.html?step=passwd";
+				/*
+				   The authentication should be done on the Authorization field
+				   as all Basic authentication.
+				   Or here the authentication accept a jwt token.
+				   This may be present inside a X-TOKEN header field or inside a Cookie
+				
+				secret = "kXp2s5v8y/B?E(H+KbPeShVmYq3t6w9z";
+				options = "jwt";
+				 */
+				issuer = "authpass";
+			},{
+				type = "wwwform";
+				token_ep = "/token_totp";
 				authz = "totp";
-				options = "token,cookie";
+				/*
+				   This is the last real authentication.
+				   A JWT may be used for authentication or POST with ww-form-urlencoded.
+				   The cookie option generates the token inside cookie
+				*/
+				options = "jwt,cookie";
 				secret = "kXp2s5v8y/B?E(H+KbPeShVmYq3t6w9z";
 				unprotect = "^/trust/*";
-				signin = "/trust/signin_totp.html";
+				signin = "/trust/signin.html?step=totp";
+				issuer = "totp";
+			},{
+				/*
+				   The last auth is not a real authentication
+				   It generates the cookie for the user and
+				   manages the users database
+				*/
+				type = "none";
+				dbname="%PWD%/tests/conf/passwd.db";
+				secret = "kXp2s5v8y/B?E(H+KbPeShVmYq3t6w9z";
+				options = "jwt,cookie,management";
+				issuer = "authpass+totp";
 			});
 			redirect = {
 				links = ({
@@ -39,20 +70,20 @@ servers= ({
 			cors = {
 				origin = "localhost,ouistiti";
 			};
-		},{
-			hostname = "badauth.ouistiti.local";
-			auth = {
-				type="Bearer";
-				authz = "jwt";
-				options = "token,cookie";
-			};
 		});
 		auth = {
 			type="Bearer";
 			authz = "jwt";
-			options = "token,cookie";
+			/*
+			   The option must contain "header" or "cookie" to allow
+			   to the client to retrieve user information.
+			   otherwise the client must request the "auth" service
+			   (auth.ouistiti.net) on /auth/mngt.
+			 */
+			options = "header";
 			secret = "kXp2s5v8y/B?E(H+KbPeShVmYq3t6w9z";
 			signin = "http://auth.ouistiti.local:8080/token";
+			issuer = "authpass";
 		};
 		userfilter = {
 			dbname = "%PWD%/tests/conf/filter.db";

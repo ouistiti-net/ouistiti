@@ -1,0 +1,3 @@
+DESC="lib: test message with bad version"
+CONFIG=test16.conf
+TESTCODE=400

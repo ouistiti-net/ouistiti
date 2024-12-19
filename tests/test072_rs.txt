@@ -1,4 +1,4 @@
 HTTP/1.1 301 Moved Permanently
-Location: https://www.ouistiti.local:8080/index.html
+Location: https://www.ouistiti.local/index.html
 Vary: Upgrade-Insecure-Requests
 

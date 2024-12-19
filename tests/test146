@@ -1,0 +1,7 @@
+if [ "$AUTHZ_MANAGER" != "y" ]; then
+	echo "authmngt module disabled"
+	DISABLED=1
+fi
+DESC="authmngt: change user's issuer from root"
+CONFIG=test16.conf
+TESTCODE=200

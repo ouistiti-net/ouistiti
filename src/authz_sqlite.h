@@ -55,6 +55,7 @@ typedef struct authz_sqlite_config_s authz_sqlite_config_t;
 struct authz_sqlite_config_s
 {
 	const char *dbname;
+	const hash_t *hash;
 };
 
 #ifdef FILE_CONFIG
@@ -68,7 +69,7 @@ extern authz_rules_t authz_sqlite_rules;
 typedef struct authz_sqlite_s authz_sqlite_t;
 struct authz_sqlite_s
 {
-	const authz_sqlite_config_t *config;
+	authz_sqlite_config_t *config;
 	int ref;
 	sqlite3 *db;
 	sqlite3 *dbjoin;
@@ -78,8 +79,9 @@ struct authz_sqlite_s
 
 typedef int (*storeinfo_t)(void *arg, const char *key, size_t keylen, const char *value, size_t valuelen);
 
-int authz_sqlite_getid(authz_sqlite_t *ctx, const char *name, int table);
+int authz_sqlite_getid(authz_sqlite_t *ctx, const char *name, int length, int table);
 int authz_sqlite_getuser_byID(authz_sqlite_t *ctx, int id, storeinfo_t callback, void *cbarg);
 int authz_sqlite_getuser_byName(authz_sqlite_t *ctx, const char * user, storeinfo_t callback, void *cbarg);
+size_t authz_sqlite_issuer(void *arg, const char *user, char *issuer, size_t length);
 
 #endif

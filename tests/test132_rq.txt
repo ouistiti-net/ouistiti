@@ -1,0 +1,4 @@
+GET /index_signed.html HTTP/1.1
+HOST: 127.0.0.1
+Upgrade-Insecure-Requests: 1
+

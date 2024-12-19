@@ -40,7 +40,7 @@ case $1 in
 		;;
 	-A)
 		ALL=1
-		TESTS=$(find $TESTDIR -maxdepth 1 -name test*[0-9] | sort)
+		TESTS=$(find $TESTDIR -maxdepth 1 -name "test*[0-9]" | sort)
 		;;
 	-N)
 		NOERROR=1
@@ -104,6 +104,10 @@ start () {
 	TARGET=$1
 	CONFIG=$2
 
+	ARGUMENTS=""
+	if [ "$VTHREAD" != "y" ]; then
+		ARGUMENTS=" -s 1"
+	fi
 	#ARGUMENTS=$ARGUMENTS" -s 1"
 	ARGUMENTS=$ARGUMENTS" -f ${TESTDIR}conf/${CONFIG}"
 	ARGUMENTS=$ARGUMENTS" -P ${TESTDEFAULTPORT}"
@@ -113,6 +117,7 @@ start () {
 		echo "******************************"
 		cat ${TESTDIR}conf/${CONFIG}
 	fi
+	echo "${ENV} ${SRCDIR}${TARGET} ${ARGUMENTS}"
 	${ENV} ${SRCDIR}${TARGET} ${ARGUMENTS} &
 	PID=$!
 	echo "${TARGET} started with pid ${PID}"
@@ -175,6 +180,7 @@ test () {
 	fi
 
 	config $CONFIG
+	rm -f $TMPRESPONSE
 
 	if [ -n "$PREPARE_ASYNC" ]; then
 		$PREPARE_ASYNC &
@@ -207,14 +213,16 @@ test () {
 		#$WGET --no-check-certificate -S -O - $WGETURL
 		cat $TMPRESPONSE.tmp | sed 's/^  //g' > $TMPRESPONSE
 	fi
-	if [ -n "$TESTREQUEST" ]; then
-		if [ -n "$INFO" ]; then
-			cat ${TESTDIR}$TESTREQUEST
-			echo "----"
+	for REQUEST in ${TESTREQUEST} ; do
+		if [ -n "$REQUEST" ]; then
+			if [ -n "$INFO" ]; then
+				cat ${TESTDIR}$REQUEST
+				echo "----"
+			fi
+			echo cat ${TESTDIR}$REQUEST' |' $TESTCLIENT $TESTOPTION
+			cat ${TESTDIR}$REQUEST | $TESTCLIENT $TESTOPTION >> $TMPRESPONSE
 		fi
-		echo cat ${TESTDIR}$TESTREQUEST' |' $TESTCLIENT $TESTOPTION
-		cat ${TESTDIR}$TESTREQUEST | $TESTCLIENT $TESTOPTION > $TMPRESPONSE
-	fi
+	done
 	if [ -n "$CMDREQUEST" ]; then
 		if [ -n "$INFO" ]; then
 			$CMDREQUEST
@@ -237,7 +245,7 @@ test () {
 				ERR=4
 			fi
 		fi
-		rescode=$(cat $TMPRESPONSE | ${AWK} '/^HTTP\/1\.1 .* .*/{print $2}' )
+		rescode=$(cat $TMPRESPONSE | ${AWK} '/^HTTP\/1\.[0,1] .* .*/{print $2}' )
 		resheaderlen=$TESTHEADERLEN
 		rescontentlen=$TESTCONTENTLEN
 		#resheaderlen=$(echo $result | ${AWK} -F= 't$0 == t {print $0}' | wc -c)
@@ -300,6 +308,11 @@ if [ ${ALL} -eq 1 ]; then
 	${SRCDIR}${TARGET} ${ARGUMENTS} -h
 	${SRCDIR}${TARGET} ${ARGUMENTS} -V
 	${SRCDIR}${TARGET} ${ARGUMENTS} -C -f ${TESTDIR}conf/test1.conf
+	${SRCDIR}${TARGET} ${ARGUMENTS} -W ${TESTDIR} -f ${TESTDIR}conf/test.conf -p $TMPRESPONSE.pid -D
+	sleep 1
+	$WGET --no-check-certificate -S -q -O - http://127.0.0.1:8080/index.html 2> $TMPRESPONSE.tmp
+	sleep 1
+	${SRCDIR}${TARGET} ${ARGUMENTS} -p $TMPRESPONSE.pid -K
 fi
 if [ ${GCOV} -eq 1 ]; then
 	make DEBUG=y gcov

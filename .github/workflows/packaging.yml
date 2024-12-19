@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PACKAGENAME: ouistiti
-      DEPENDENCIES: libjansson-dev libconfig-dev libssl-dev debhelper devscripts
+      DEPENDENCIES: libjansson-dev libconfig-dev libssl-dev libsqlite3-dev debhelper devscripts
     steps:
       - name: install dependencies
         run: |

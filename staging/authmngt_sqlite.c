@@ -49,10 +49,10 @@
 
 #define auth_dbg(...)
 
-static void *authmngt_sqlite_create(http_server_t *UNUSED(server), void *arg)
+static void *authmngt_sqlite_create(http_client_t *UNUSED(client), void *arg)
 {
 	authz_sqlite_t *ctx = NULL;
-	const authz_sqlite_config_t *config = (const authz_sqlite_config_t *)arg;
+	authz_sqlite_config_t *config = (authz_sqlite_config_t *)arg;
 	int ret;
 	sqlite3 *db;
 
@@ -62,7 +62,7 @@ static void *authmngt_sqlite_create(http_server_t *UNUSED(server), void *arg)
 		return NULL;
 	}
 
-	ret = sqlite3_open_v2(config->dbname, &db, SQLITE_OPEN_READWRITE, NULL);
+	ret = sqlite3_open_v2(config->dbname, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, NULL);
 	if (ret != SQLITE_OK)
 	{
 		err("authmngt: database %s error: %s", config->dbname, sqlite3_errstr(ret));
@@ -84,7 +84,7 @@ static void authmngt_sqlite_destroy(void *arg)
 	free(ctx);
 }
 
-static int authz_sqlite_updatefield(authz_sqlite_t *ctx, int userid, const char *field, int group)
+static int authz_sqlite_updatefield(authz_sqlite_t *ctx, int userid, const char *field, int length, int group)
 {
 	int ret;
 	const char *sql[] = {
@@ -107,7 +107,7 @@ static int authz_sqlite_updatefield(authz_sqlite_t *ctx, int userid, const char 
 		return EREJECT;
 	}
 
-	int fieldid = authz_sqlite_getid(ctx, field, group);
+	int fieldid = authz_sqlite_getid(ctx, field, -1, group);
 
 	int index;
 	index = sqlite3_bind_parameter_index(statement, "@USERID");
@@ -121,7 +121,7 @@ static int authz_sqlite_updatefield(authz_sqlite_t *ctx, int userid, const char 
 
 	index = sqlite3_bind_parameter_index(statement, "@FIELD");
 	if (index > 0)
-		ret = sqlite3_bind_text(statement, index, field, -1, SQLITE_STATIC);
+		ret = sqlite3_bind_text(statement, index, field, length, SQLITE_STATIC);
 	if (ret != SQLITE_OK) {
 		err("%s(%d) %d: %s\n%s", __FUNCTION__, __LINE__, ret, sql[group], sqlite3_errmsg(ctx->db));
 		sqlite3_finalize(statement);
@@ -183,7 +183,7 @@ static int authz_sqlite_adduser(void *arg, authsession_t *authinfo)
 {
 	authz_sqlite_t *ctx = (authz_sqlite_t *)arg;
 
-	if (authz_sqlite_getid(ctx, authinfo->user, FIELD_NAME) != EREJECT)
+	if (authz_sqlite_getid(ctx, authinfo->user, -1, FIELD_NAME) != EREJECT)
 		return ESUCCESS;
 	// force the first status to approving
 	strncpy(authinfo->status, str_status_approving, FIELD_MAX);
@@ -230,7 +230,7 @@ static int authz_sqlite_adduser(void *arg, authsession_t *authinfo)
 	return (ret == SQLITE_DONE)?ESUCCESS:EREJECT;
 }
 
-static int authz_sqlite_addgroup(void *arg, const char *group)
+static int authz_sqlite_addgroup(void *arg, const char *group, int length)
 {
 	authz_sqlite_t *ctx = (authz_sqlite_t *)arg;
 	int ret;
@@ -243,7 +243,7 @@ static int authz_sqlite_addgroup(void *arg, const char *group)
 
 	int index;
 	index = sqlite3_bind_parameter_index(statement, "@NAME");
-	ret = sqlite3_bind_text(statement, index, group, -1, SQLITE_STATIC);
+	ret = sqlite3_bind_text(statement, index, group, length, SQLITE_STATIC);
 	SQLITE3_CHECK(ret, EREJECT, sql);
 
 	auth_dbg("auth: sql query %s", sqlite3_expanded_sql(statement));
@@ -251,36 +251,27 @@ static int authz_sqlite_addgroup(void *arg, const char *group)
 	sqlite3_finalize(statement);
 	if (ret != SQLITE_DONE)
 		err("auth: add group error %d %s", ret, sqlite3_errmsg(ctx->db));
-	return (ret == SQLITE_DONE)?ESUCCESS:EREJECT;
+	if (ret == SQLITE_DONE)
+		return sqlite3_last_insert_rowid(ctx->db);
+	return EREJECT;
 }
 
-#if 0
-static int _compute_passwd(const char *input, char *output, int outlen)
+static int _compute_passwd(const hash_t *hash, const char *input, char *output, int outlen)
 {
 	if (input == NULL)
 		return -1;
-	const hash_t *hash = NULL;
-	hash = hash_sha256;
 
-	if (hash != NULL)
-	{
-		char *hashpasswd = malloc(hash->size);
-		void *ctx;
-		ctx = hash->init();
-		hash->update(ctx, input, strlen(input));
-		hash->finish(ctx, hashpasswd);
+	char *hashpasswd = malloc(hash->size);
+	void *ctx;
+	ctx = hash->init();
+	hash->update(ctx, input, strlen(input));
+	hash->finish(ctx, hashpasswd);
 
-		int len = snprintf(output, outlen, "$5$");
-		base64->encode(hashpasswd, hash->size, output + len, outlen - len);
-		free(hashpasswd);
-	}
-	else
-	{
-		snprintf(output, outlen, "%s", input);
-	}
-	return 0;
+	int len = snprintf(output, outlen, "$%c$", hash->nameid);
+	len += base64->encode(hashpasswd, hash->size, output + len, outlen - len);
+	free(hashpasswd);
+	return len;
 }
-#endif
 
 static int authz_sqlite_changepasswd(void *arg, authsession_t *authinfo)
 {
@@ -288,15 +279,29 @@ static int authz_sqlite_changepasswd(void *arg, authsession_t *authinfo)
 	int userid = 0;
 	int ret = EREJECT;
 
-	userid = authz_sqlite_getid(ctx, authinfo->user, FIELD_NAME);
+	userid = authz_sqlite_getid(ctx, authinfo->user, -1, FIELD_NAME);
 	if (userid == EREJECT)
 		return ret;
 
 	if (authinfo->passwd[0] != '\0')
 	{
-		ret = authz_sqlite_updatefield(ctx, userid, authinfo->passwd, FIELD_PASSWD);
+		int length = -1;
+		const char *passwd = authinfo->passwd;
+		char passwdarray[TOKEN_MAX];
+		if (ctx->config->hash != NULL)
+		{
+			int len = _compute_passwd(ctx->config->hash, authinfo->passwd, passwdarray, TOKEN_MAX);
+			if (len > 0)
+			{
+				length = len;
+				passwd = passwdarray;
+			}
+		}
+
+		ret = authz_sqlite_updatefield(ctx, userid, passwd, length, FIELD_PASSWD);
 	}
-	authz_sqlite_getusermng(ctx, userid, authinfo);
+	if (ret != EREJECT)
+		ret = authz_sqlite_getusermng(ctx, userid, authinfo);
 
 	return ret;
 }
@@ -307,32 +312,38 @@ static int authz_sqlite_changeinfo(void *arg, authsession_t *authinfo)
 	int userid = 0;
 	int ret = ESUCCESS;
 
-	userid = authz_sqlite_getid(ctx, authinfo->user, FIELD_NAME);
+	userid = authz_sqlite_getid(ctx, authinfo->user, -1, FIELD_NAME);
 	if (userid == EREJECT)
 		return EREJECT;
 
 	if (ret == ESUCCESS && authinfo->group[0] != '\0')
 	{
-		if (authz_sqlite_getid(ctx, authinfo->group, FIELD_GROUP) == EREJECT)
+		int length = -1;
+		const char *group = authinfo->group;
+		const char *end = strchr(group, ',');
+		if (end)
+			length = end - group;
+		int groupid = authz_sqlite_getid(ctx, group, length, FIELD_GROUP);
+		if (groupid == EREJECT)
 		{
-			ret = authz_sqlite_addgroup(ctx, authinfo->group);
+			groupid = authz_sqlite_addgroup(ctx, group, length);
 		}
-		if (ret == ESUCCESS)
-			ret = authz_sqlite_updatefield(ctx, userid, authinfo->group, FIELD_GROUP);
+		if (groupid != EREJECT)
+			ret = authz_sqlite_updatefield(ctx, userid, group, length, FIELD_GROUP);
 	}
 
 	if (ret == ESUCCESS && authinfo->status[0] != '\0')
 	{
-		int statusid = authz_sqlite_getid(ctx, authinfo->status, FIELD_STATUS);
+		int statusid = authz_sqlite_getid(ctx, authinfo->status, -1, FIELD_STATUS);
 		if (statusid == -1)
 			err("authmngt: update unknown status %s", authinfo->status);
 		else
-			ret = authz_sqlite_updatefield(ctx, userid, authinfo->status, FIELD_STATUS);
+			ret = authz_sqlite_updatefield(ctx, userid, authinfo->status, -1, FIELD_STATUS);
 	}
 
 	if (ret == ESUCCESS && authinfo->home[0] != '\0')
 	{
-		ret = authz_sqlite_updatefield(ctx, userid, authinfo->home, FIELD_HOME);
+		ret = authz_sqlite_updatefield(ctx, userid, authinfo->home, -1, FIELD_HOME);
 	}
 
 	return ret;
@@ -343,7 +354,7 @@ static int authz_sqlite_removeuser(void *arg, authsession_t *authinfo)
 	authz_sqlite_t *ctx = (authz_sqlite_t *)arg;
 	int userid = 0;
 
-	userid = authz_sqlite_getid(ctx, authinfo->user, FIELD_NAME);
+	userid = authz_sqlite_getid(ctx, authinfo->user, -1, FIELD_NAME);
 	if (userid == EREJECT)
 		return EREJECT;
 
@@ -372,6 +383,77 @@ static int authz_sqlite_removeuser(void *arg, authsession_t *authinfo)
 	return (ret == SQLITE_DONE)?ESUCCESS:EREJECT;
 }
 
+static size_t authmngt_sqlite_issuer(void *arg, const char *user, char *issuer, size_t length)
+{
+	return authz_sqlite_issuer(arg, user, issuer, length);
+}
+
+static int authmngt_sqlite_addissuer(void *arg, int userid, const char *issuer, size_t length, int insert)
+{
+	authz_sqlite_t *ctx = (authz_sqlite_t *)arg;
+	int ret;
+	const char *sql = NULL;
+	if (insert)
+		sql = "insert into issuers (\"userid\",\"issuer\") values (@USERID,@ISSUER);";
+	else
+		sql = "update issuers set issuer=@ISSUER where userid=@USERID;";
+
+	sqlite3_stmt *statement; /// use a specific statement, it is useless to keep the result at exit
+	ret = sqlite3_prepare_v2(ctx->db, sql, -1, &statement, NULL);
+	SQLITE3_CHECK(ret, EREJECT, sql);
+
+	int index;
+	index = sqlite3_bind_parameter_index(statement, "@USERID");
+	ret = sqlite3_bind_int(statement, index, userid);
+	SQLITE3_CHECK(ret, EREJECT, sql);
+
+	index = sqlite3_bind_parameter_index(statement, "@ISSUER");
+	ret = sqlite3_bind_text(statement, index, issuer, length, SQLITE_STATIC);
+	SQLITE3_CHECK(ret, EREJECT, sql);
+
+	auth_dbg("auth: sql query %s", sqlite3_expanded_sql(statement));
+	ret = sqlite3_step(statement);
+	sqlite3_finalize(statement);
+
+	if (ret != SQLITE_DONE)
+	{
+		err("authmngt: impossible to change issuer");
+	}
+	return (ret == SQLITE_DONE)?ESUCCESS:EREJECT;
+}
+
+static int authmngt_sqlite_setissuer(void *arg, const char * user, const char *issuer, size_t length)
+{
+	authz_sqlite_t *ctx = (authz_sqlite_t *)arg;
+	int userid = 0;
+
+	userid = authz_sqlite_getid(ctx, user, -1, FIELD_NAME);
+	if (userid == EREJECT)
+		return EREJECT;
+
+	int ret;
+	const char *sql = "select issuer from issuers where userid=@USERID;";
+
+	sqlite3_stmt *statement; /// use a specific statement, it is useless to keep the result at exit
+	ret = sqlite3_prepare_v2(ctx->db, sql, -1, &statement, NULL);
+	SQLITE3_CHECK(ret, EREJECT, sql);
+
+	int index;
+	index = sqlite3_bind_parameter_index(statement, "@USERID");
+	ret = sqlite3_bind_int(statement, index, userid);
+	SQLITE3_CHECK(ret, EREJECT, sql);
+
+	dbg("auth: sql query %s", sqlite3_expanded_sql(statement));
+	ret = sqlite3_step(statement);
+	sqlite3_finalize(statement);
+
+	if (ret != SQLITE_ROW)
+		ret = authmngt_sqlite_addissuer(arg, userid, issuer, length, 1);
+	else
+		ret = authmngt_sqlite_addissuer(arg, userid, issuer, length, 0);
+	return ret;
+}
+
 authmngt_rules_t authmngt_sqlite_rules =
 {
 	.create = &authmngt_sqlite_create,
@@ -381,5 +463,7 @@ authmngt_rules_t authmngt_sqlite_rules =
 	.changepasswd = &authz_sqlite_changepasswd,
 	.changeinfo = &authz_sqlite_changeinfo,
 	.removeuser = &authz_sqlite_removeuser,
+	.issuer = &authmngt_sqlite_issuer,
+	.setissuer = &authmngt_sqlite_setissuer,
 	.destroy = &authmngt_sqlite_destroy,
 };

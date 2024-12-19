@@ -1,4 +1,6 @@
-from ouistiti import HttpResponse, HttpRequest
+from ouistiti import Settings
+from ouistiti import HttpRequest
+from ouistiti import HttpResponse
 
 def echo(request):
 	content_type=""
@@ -10,5 +12,5 @@ def echo(request):
 		message = b"Long contents inside Request are not supported"
 		content_type = "text/plain"
 	response = HttpResponse(message, content_type=content_type)
-	response["Content-Length"] = len(response.content)
+	response["Content-Length"] = str(len(response.content))
 	return response

@@ -1,5 +1,4 @@
 HTTP/1.1 403 Forbidden
-Set-Cookie: X-Auth-Token=eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ1c2VyIjogIkpvaG4gRG9lIiwgImhvbWUiOiAidHJ1ZSIsICJzdGF0dXMiOiAicmVhcHByb3ZpbmciLCAicm9sZXMiOiAicmVhcHByb3ZpbmciLCAiZXhwIjogMTgwMCwgImlzcyI6ICJqd3QifQ.Vj4wmtZji6uT0DxlXY_hXRXgZPVqYRZHea32fPN5ecQ; SameSite=strict; Path=/; Domain=.ouistiti.local
 Set-Cookie: X-Remote-User=John Doe; SameSite=strict; Path=/; Domain=.ouistiti.local
 Set-Cookie: X-Remote-Group=reapproving; SameSite=strict; Path=/; Domain=.ouistiti.local
 Content-Type: text/plain

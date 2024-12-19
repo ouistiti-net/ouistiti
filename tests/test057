@@ -1,6 +1,8 @@
-DESC="Auth Bearer from good JWT"
+if [ "$AUTHZ_JWT_CHECKHEADER" != "y" ]; then
+	echo "JWT header checking disabled"
+	DISABLED=1
+fi
+DESC="Auth Bearer bad header of JWT"
 CONFIG=test13.conf
-TESTREQUEST=test054_rq.txt
-TESTCODE=200
-TESTHEADERLEN=643
-TESTCONTENTLEN=40
+TESTCODE=302
+TESTRESPONSE=error302_redirect_rs.txt

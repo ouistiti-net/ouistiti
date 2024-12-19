@@ -1,0 +1,3 @@
+DESC="lib: test message without version: HTTP 0.9 with header"
+CONFIG=test16.conf
+TESTCODE=none

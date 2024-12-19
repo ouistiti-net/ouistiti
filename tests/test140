@@ -1,0 +1,4 @@
+DESC="Document: test a request with HTTP 1.0"
+CONFIG=test1.conf
+TESTCODE=200
+TESTRESPONSE=index_rs.txt

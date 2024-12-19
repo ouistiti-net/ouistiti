@@ -1,5 +1,5 @@
 servers= ({
-		hostname = "myvhost3";
+		service = "myvhost3";
 		websocket = {
 			docroot = "/tmp";
 			allow = "echo";

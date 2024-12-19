@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TLS: OPENSSL
-      DEPENDENCIES: libjansson-dev libconfig-dev libssl-dev
+      DEPENDENCIES: libjansson-dev libconfig-dev libssl-dev libsqlite3-dev
       BUILD_WRAPPER_OUT_DIR: bw-output
       LIBHTTPSERVER_VERSION: ${{ inputs.LIBHTTPSERVER_VERSION }}
       SONARCLOUD_OPTIONS: >

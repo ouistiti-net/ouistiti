@@ -74,7 +74,7 @@ typedef struct _document_connector_s document_connector_t;
 
 int mod_send(document_connector_t *private, http_message_t *response);
 
-void document_close(document_connector_t *private, http_message_t *request)
+static void _document_close(document_connector_t *private)
 {
 	if (private->fdfile > 0)
 		close(private->fdfile);
@@ -83,8 +83,6 @@ void document_close(document_connector_t *private, http_message_t *request)
 		close(private->fdroot);
 	private->fdroot = 0;
 	private->func = NULL;
-	httpmessage_private(request, NULL);
-	free(private);
 }
 
 #ifdef DOCUMENTHOME
@@ -225,16 +223,11 @@ static int _document_getconnnectorheader(_mod_document_mod_t *mod,
 
 static int _document_connector(void *arg, http_message_t *request, http_message_t *response)
 {
-	document_connector_t *private = httpmessage_private(request, NULL);
-	_mod_document_mod_t *mod = (_mod_document_mod_t *)arg;
+	document_connector_t *private = (document_connector_t *)arg;
+	_mod_document_mod_t *mod = private->mod;
 	http_connector_t connector = NULL;
 	const mod_document_t *config = mod->config;
 
-	if (private != NULL)
-	{
-		err("document: client should be uninitialized");
-		return EREJECT;
-	}
 	const char *uri = NULL;
 	int urilen = httpmessage_REQUEST2(request,"uri", &uri);
 
@@ -353,35 +346,19 @@ static int _document_connector(void *arg, http_message_t *request, http_message_
 		err("document: spurious error on fstat %s", strerror(errno));
 		close(fdroot);
 		close(fdfile);
-		return -1;
+		httpmessage_result(response, RESULT_500);
+		return ESUCCESS;
 	}
 	document_dbg("document: open %s", uri);
-
-#ifdef RANGEREQUEST
-	if (config->options & DOCUMENT_RANGE)
-	{
-		char range[20];
-		int rangelen = snprintf(range, sizeof(range), "bytes %.9ld/*", (long)filestat.st_size);
-		httpmessage_addheader(response, "Content-Range", range, rangelen);
-	}
-#endif
 
 	if (S_ISDIR(filestat.st_mode))
 	{
 		type |= DOCUMENT_DIRLISTING;
 	}
 
-	private = calloc(1, sizeof(*private));
-	httpmessage_private(request, private);
-
-	mod->transfer = mod_send_read;
-#ifdef SENDFILE
-	if (config->options & DOCUMENT_SENDFILE)
-	{
-		mod->transfer = mod_send_sendfile;
-	}
+#ifndef RANGEREQUEST
+	httpmessage_addheader(response, "Accept-Ranges", "none", 4);
 #endif
-	private->mod = mod;
 	private->ctl = httpmessage_client(request);
 	private->fdfile = fdfile;
 	private->fdroot = fdroot;
@@ -400,8 +377,8 @@ static int _document_connector(void *arg, http_message_t *request, http_message_
 
 int getfile_connector(void *arg, http_message_t *request, http_message_t *response)
 {
-	document_connector_t *private = httpmessage_private(request, NULL);
-	const _mod_document_mod_t *mod = (_mod_document_mod_t *)arg;
+	document_connector_t *private = (document_connector_t *)arg;
+	const _mod_document_mod_t *mod = private->mod;
 	int ret;
 
 	ret = mod->transfer(private, response);
@@ -410,7 +387,6 @@ int getfile_connector(void *arg, http_message_t *request, http_message_t *respon
 		if (errno == EAGAIN)
 			return ECONTINUE;
 		err("document: send %s (%d,%s)", private->url, ret, strerror(errno));
-		document_close(private, request);
 		/**
 		 * it is too late to set an error here
 		 */
@@ -433,7 +409,6 @@ int getfile_connector(void *arg, http_message_t *request, http_message_t *respon
 			dbg("document: (%llu bytes) time %ld:%03ld", private->datasize, value.tv_sec, value.tv_nsec/1000000);
 #endif
 		warn("document: send %s", private->url);
-		document_close(private, request);
 		return ESUCCESS;
 	}
 	return ECONTINUE;
@@ -444,7 +419,7 @@ static int mod_send_read(document_connector_t *private, http_message_t *response
 	int ret = 0;
 	int size;
 	int chunksize;
-	char content[CONTENTCHUNK];
+	char content[CONTENTCHUNK + 1];
 
 	/**
 	 * check the size for the range support
@@ -468,28 +443,68 @@ static int mod_send_read(document_connector_t *private, http_message_t *response
 
 static int _transfer_connector(void *arg, http_message_t *request, http_message_t *response)
 {
-	document_connector_t *private = httpmessage_private(request, NULL);
-
-	if (private)
+	document_connector_t *private = (document_connector_t *)arg;
+	int ret = EREJECT;
+	if (private->func)
 	{
-		if ( private->func)
-			return private->func(arg, request, response);
-		document_close(private, request);
-		return ESUCCESS;
+		ret = private->func(arg, request, response);
 	}
-	return EREJECT;
+	/// in case of HEAD method func is null but file is opened
+	else if (private->fdfile)
+		ret = ESUCCESS;
+	if (ret == ESUCCESS)
+	{
+		_document_close(private);
+	}
+	return ret;
 }
 
 static int _mime_connector(void *arg, http_message_t *request, http_message_t *response)
 {
-	const document_connector_t *private = httpmessage_private(request, NULL);
+	document_connector_t *private = (document_connector_t *)arg;
 
-	if (private != NULL &&
-		   (private->fdfile > 0) &&
-		   private->mime)
+	if ((private->fdfile > 0) && private->mime)
 		httpmessage_addcontent(response, private->mime, NULL, private->size);
 
 	return EREJECT;
+}
+
+static const char str_range[] = "range";
+/// the freectx allows to clean the system when the socket closing
+static void *_document_getctx(void *arg, http_client_t *clt, struct sockaddr *addr, int addrsize)
+{
+	document_connector_t *private = NULL;
+	_mod_document_mod_t *mod = (_mod_document_mod_t *)arg;
+	const mod_document_t *config = mod->config;
+
+	private = calloc(1, sizeof(*private));
+
+	mod->transfer = mod_send_read;
+#ifdef SENDFILE
+	if (config->options & DOCUMENT_SENDFILE)
+	{
+		mod->transfer = mod_send_sendfile;
+	}
+#endif
+	private->mod = mod;
+
+	// the order is important
+	httpclient_addconnector(clt, _transfer_connector, private, CONNECTOR_DOCUMENT, str_document);
+	httpclient_addconnector(clt, _mime_connector, private, CONNECTOR_DOCUMENT, str_document);
+#ifdef RANGEREQUEST
+	if (config->options & DOCUMENT_RANGE)
+		httpclient_addconnector(clt, range_connector, private, CONNECTOR_DOCUMENT, str_range);
+#endif
+	httpclient_addconnector(clt, _document_connector, private, CONNECTOR_DOCUMENT, str_document);
+
+	return private;
+}
+
+static void _document_freectx(void *arg)
+{
+	document_connector_t *private = (document_connector_t *)arg;
+	_document_close(private);
+	free(private);
 }
 
 #ifdef FILE_CONFIG
@@ -642,13 +657,7 @@ static void *mod_document_create(http_server_t *server, mod_document_t *config)
 		}
 	}
 #endif
-	httpserver_addconnector(server, _document_connector, mod, CONNECTOR_DOCUMENT, str_document);
-#ifdef RANGEREQUEST
-	if (config->options & DOCUMENT_RANGE)
-		httpserver_addconnector(server, range_connector, mod, CONNECTOR_DOCUMENT, str_document);
-#endif
-	httpserver_addconnector(server, _mime_connector, mod, CONNECTOR_DOCUMENT, str_document);
-	httpserver_addconnector(server, _transfer_connector, mod, CONNECTOR_DOCUMENT, str_document);
+	httpserver_addmod(server, _document_getctx, _document_freectx, mod, str_document);
 
 #ifdef DOCUMENTREST
 	if (config->options & DOCUMENT_REST)

@@ -1,0 +1,6 @@
+DESC="Auth Bearer bad issuer on JWT"
+CONFIG=test13.conf
+TESTCODE=302
+TESTHEADERLEN=369
+TESTCONTENTLEN=0
+TESTRESPONSE=error302_redirect_rs.txt

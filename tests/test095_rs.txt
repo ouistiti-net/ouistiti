@@ -1,4 +1,4 @@
 HTTP/1.1 200 OK
 Content-Type: text/json
 
-[{"user":"root","group":"root","status":"activated","home":"/home/root"},{"user":"foo","group":"users","status":"activated","home":"/home/foo"}]
+[{"user":"root","group":"root","status":"activated","home":"/home/root"},{"user":"foo","group":"users","status":"activated","home":"/home/foo"},{"user":"johnDoe","group":"users","status":"activated","home":"/home/john","issuers":{"totp":false}}]

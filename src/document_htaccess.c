@@ -51,11 +51,11 @@ int htaccess_config(config_setting_t *setting, htaccess_t *htaccess)
 
 	config_setting_lookup_bool(setting, "denylast", &denylast);
 
-	_string_store(&htaccess->allow, allow, -1);
+	string_store(&htaccess->allow, allow, -1);
 	if (!denylast)
-		_string_store(&htaccess->denyfirst, deny, -1);
+		string_store(&htaccess->denyfirst, deny, -1);
 	else
-		_string_store(&htaccess->denylast, deny, -1);
+		string_store(&htaccess->denylast, deny, -1);
 	return ESUCCESS;
 }
 #endif

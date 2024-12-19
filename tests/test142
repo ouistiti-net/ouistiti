@@ -1,0 +1,3 @@
+DESC="Document: test a request with HTTP 1.0 and close connection"
+CONFIG=test1.conf
+TESTCODE=200

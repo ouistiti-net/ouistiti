@@ -1,4 +1,5 @@
 GET /index.html HTTP/1.1
-HOST: 127.0.0.1
-Authorization: Bearer eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ1c2VyIjogImZvbyIsICJob21lIjogIi9ob21lL2ZvbyIsICJzdGF0dXMiOiAiYWN0aXZhdGVkIiwgInJvbGVzIjogInVzZXJzIiwgImV4cCI6IDE4MDAsICJpc3MiOiAic3FsaXRlIn0.s3ceCBoZG55hnZ-1AKRSt-YncJGvWW1TchZJAqBV2HM
+HOST: auth.ouistiti.local
+Cookie: X-Auth-Token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiZm9vIiwiaG9tZSI6Ii9ob21lL2ZvbyIsInN0YXR1cyI6ImFjdGl2YXRlZCIsInJvbGVzIjoidXNlcnMiLCJhdXRoX3R5cGUiOiJCYXNpYyIsImV4cCI6MTg1MCwiaXNzIjoic3FsaXRlIn0.A0pHXMMHDK-ii8_K55yyRVKpzX5ix3mpXqtZcVE--pg; SameSite=strict; Path=/; Domain=.ouistiti.net
+Connection: Keep-Alive
 

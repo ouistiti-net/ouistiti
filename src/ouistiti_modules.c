@@ -94,7 +94,10 @@ int ouistiti_initmodules(const char *pkglib)
 			 * the library is already loaded
 			 */
 			if (dh != NULL)
+			{
+				free(namelist[i]);
 				continue;
+			}
 			dh = dlopen(path, RTLD_LAZY | RTLD_GLOBAL);
 
 			if (dh != NULL)
@@ -122,8 +125,8 @@ int ouistiti_initmodules(const char *pkglib)
 			free(namelist[i]);
 		}
 		iterator = strtok_r(NULL, ":", &it_r);
+		free(namelist);
 	}
-	free(namelist);
 	return ESUCCESS;
 }
 

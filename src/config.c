@@ -46,9 +46,6 @@
 
 extern char str_hostname[HOST_NAME_MAX + 7];
 
-static char *logfile = NULL;
-static int logfd = 0;
-
 typedef void (*_parsercb_t)(void *arg, const char *option, size_t length);
 
 static void config_mimes(const config_setting_t *configmimes)
@@ -225,19 +222,9 @@ ouistiticonfig_t *ouistiticonfig_create(const char *filepath)
 	ouistiticonfig->configfile = configfile;
 
 	config_lookup_string(configfile, str_user, (const char **)&ouistiticonfig->user);
+	const char *logfile = NULL;
 	config_lookup_string(configfile, "log-file", (const char **)&logfile);
-	if (logfile != NULL && logfile[0] != '\0')
-	{
-		logfd = open(logfile, O_WRONLY | O_CREAT | O_TRUNC, 00644);
-		if (logfd > 0)
-		{
-			dup2(logfd, 1);
-			dup2(logfd, 2);
-			close(logfd);
-		}
-		else
-			err("log file error %s", strerror(errno));
-	}
+	ouistiti_setlogfile(logfile, LOG_MAXFILESIZE, ouistiticonfig->user);
 	config_lookup_string(configfile, "init_d", (const char **)&ouistiticonfig->init_d);
 	const config_setting_t *configmimes = config_lookup(configfile, "mimetypes");
 	config_mimes(configmimes);
@@ -276,8 +263,6 @@ ouistiticonfig_t *ouistiticonfig_create(const char *filepath)
 
 void ouistiticonfig_destroy(ouistiticonfig_t *ouistiticonfig)
 {
-	if (logfd > 0)
-		close(logfd);
 	void *lastconfig = NULL;
 	for (int i = 0; i < MAX_SERVERS; i++)
 	{

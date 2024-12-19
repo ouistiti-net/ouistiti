@@ -226,9 +226,9 @@ static int _authz_file_checkpasswd(authz_file_t *ctx, const char *user, const ch
 	if (checkpasswd != NULL)
 	{
 		string_t userstr = {0};
-		_string_store(&userstr, user, -1);
+		string_store(&userstr, user, -1);
 		string_t passwdstr = {0};
-		_string_store(&passwdstr, passwd, -1);
+		string_store(&passwdstr, passwd, -1);
 		if (authz_checkpasswd(checkpasswd, &userstr, NULL,  &passwdstr) == ESUCCESS)
 			return 1;
 	}
@@ -237,7 +237,7 @@ static int _authz_file_checkpasswd(authz_file_t *ctx, const char *user, const ch
 	return ret;
 }
 
-static const char *authz_file_check(void *arg, const char *user, const char *passwd, const char *UNUSED(token))
+static const char *authz_file_check(void *arg, const char *user, const char *passwd, const char *token)
 {
 	authz_file_t *ctx = (authz_file_t *)arg;
 
@@ -246,7 +246,7 @@ static const char *authz_file_check(void *arg, const char *user, const char *pas
 	return NULL;
 }
 
-static int authz_file_setsession(void *arg, const char *user, auth_saveinfo_t cb, void *cbarg)
+static int authz_file_setsession(void *arg, const char *user, const char *token, auth_saveinfo_t cb, void *cbarg)
 {
 	const authz_file_t *ctx = (const authz_file_t *)arg;
 
@@ -260,6 +260,8 @@ static int authz_file_setsession(void *arg, const char *user, auth_saveinfo_t cb
 	if (ctx->home.data && ctx->home.length > 0)
 		cb(cbarg, STRING_REF(str_home), STRING_INFO(ctx->home));
 	cb(cbarg, STRING_REF(str_status), STRING_REF(str_status_activated));
+	if (token)
+		cb(cbarg, STRING_REF(str_token), STRING_REF(token));
 
 	return ESUCCESS;
 }
@@ -274,6 +276,7 @@ static void authz_file_destroy(void *arg)
 #else
 	free(ctx->storage);
 #endif
+	free(ctx->config);
 	free(ctx);
 }
 

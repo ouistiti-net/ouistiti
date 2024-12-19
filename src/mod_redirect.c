@@ -283,6 +283,34 @@ static int _mod_redirect_connector404(_mod_redirect_t *mod, http_message_t *requ
 	return ret;
 }
 
+static int _mod_redirect_destination(_mod_redirect_t *mod, mod_redirect_link_t *link,
+									http_message_t *request, http_message_t *response,
+									const char *path_info)
+{
+	httpmessage_addheader(response, str_location, link->destination, -1);
+	char sep = '?';
+	if (strchr(link->destination, '?'))
+		sep = '&';
+	if (path_info != NULL)
+	{
+		httpmessage_appendheader(response, str_location, path_info, -1);
+		if (strchr(path_info, '?'))
+			sep = '&';
+	}
+	redirect_dbg("redirect: Location from destination %s", link->destination);
+	if (link->options & REDIRECT_QUERY)
+	{
+		const char *query = NULL;
+		size_t length = httpmessage_REQUEST2(request, "query", &query);
+		if (length > 0)
+		{
+			httpmessage_appendheader(response, str_location, &sep, 1);
+			httpmessage_appendheader(response, str_location, query, length);
+		}
+	}
+	return ESUCCESS;
+}
+
 static int _mod_redirect_connectorlink(_mod_redirect_t *mod, http_message_t *request,
 									http_message_t *response, mod_redirect_link_t *link,
 									const char *uri, size_t urilen)
@@ -301,13 +329,7 @@ static int _mod_redirect_connectorlink(_mod_redirect_t *mod, http_message_t *req
 		if (link->destination != NULL &&
 				utils_searchexp(uri, link->destination, NULL) != ESUCCESS)
 		{
-			httpmessage_addheader(response, str_location, link->destination, -1);
-			if (path_info != NULL)
-			{
-				httpmessage_appendheader(response, str_location, path_info, -1);
-			}
-			redirect_dbg("redirect: Location from destination %s", link->destination);
-			ret = ESUCCESS;
+			ret = _mod_redirect_destination(mod, link, request, response, path_info);
 		}
 		else if (link->options & REDIRECT_QUERY)
 		{
@@ -335,18 +357,20 @@ static int _mod_redirect_hsts(_mod_redirect_t *mod, http_message_t *request, htt
 {
 	const char *host = NULL;
 	size_t hostlen = httpmessage_REQUEST2(request, "host", &host);
-	if (hostlen != EREJECT)
+	if (hostlen > 0)
 	{
-		httpmessage_addheader(response, str_location, scheme, -1);
+		httpmessage_addheader(response, str_location, scheme, schemelen);
 		httpmessage_appendheader(response, str_location, STRING_REF("://"));
 		httpmessage_appendheader(response, str_location, host, hostlen);
+#if 0
 		const char *port = NULL;
 		size_t portlen = httpmessage_REQUEST2(request, "port", &port);
-		if (portlen != EREJECT)
+		if (portlen >0)
 		{
 			httpmessage_appendheader(response, str_location, STRING_REF(":"));
 			httpmessage_appendheader(response, str_location, port, portlen);
 		}
+#endif
 		httpmessage_appendheader(response, str_location, uri, urilen);
 		httpmessage_addheader(response, "Vary", STRING_REF(str_upgrade_insec_req));
 		httpmessage_result(response, RESULT_301);

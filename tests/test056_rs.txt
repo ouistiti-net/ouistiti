@@ -1,4 +1,0 @@
-HTTP/1.1 302 Found
-Expires: 0
-WWW-Authenticate: Bearer realm="www.ouistiti.net"
-Location: https://auth.ouistiti.net:8080/token?redirect_uri=http://www.ouistiti.net:8080/index.html

@@ -128,8 +128,6 @@ int _document_getconnnectordelete(_mod_document_mod_t *mod,
 		http_connector_t *connector);
 #endif
 
-void document_close(document_connector_t *private, http_message_t *request);
-
 #ifdef FILE_CONFIG
 #include <libconfig.h>
 int htaccess_config(config_setting_t *setting, htaccess_t *htaccess);

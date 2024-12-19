@@ -1,5 +1,5 @@
 DELETE /auth/mngt/alibaba HTTP/1.1
 HOST: auth.ouistiti.local
-Authorization: Basic cm9vdDpyb290
+Authorization: Basic YWxpYmFiYTpzZXNhbWU=
 Origin: http://localhost
 

@@ -92,6 +92,8 @@ typedef struct ouistiticonfig_s
 ouistiticonfig_t *ouistiticonfig_create(const char *filepath);
 void ouistiticonfig_destroy(ouistiticonfig_t *ouistiticonfig);
 
+int ouistiti_setlogfile(const char *logfile, size_t logmax, const char *owner);
+
 int ouistiti_initmodules(const char *pkglib);
 void ouistiti_finalizemodule(void *dh);
 typedef void *(*configure_t)(void *data, const module_t *module, server_t *server);
@@ -100,6 +102,8 @@ const module_list_t *ouistiti_modules(server_t *server);
 int ouistiti_issecure(server_t *server);
 http_server_t *ouistiti_httpserver(server_t *server);
 serverconfig_t *ouistiti_serverconfig(server_t *server);
+
+int ouistiti_setprocessowner(const char *user);
 
 typedef struct string_s string_t;
 struct string_s
@@ -111,10 +115,14 @@ struct string_s
 
 #define STRING_REF(string) string, sizeof(string)-1
 #define STRING_INFO(string) string.data, string.length
-#define STRING_DCL(string) {.data=string, .length=sizeof(string)-1}
-int _string_store(string_t *str, const char *pointer, size_t length);
-int _string_cmp(const string_t *str, const char *cmp, size_t length);
-int _string_empty(const string_t *str);
+#define STRING_DCL(string) {.data=string, .size=sizeof(string), .length=sizeof(string)-1}
+int string_store(string_t *str, const char *pointer, size_t length);
+int string_cmp(const string_t *str, const char *cmp, size_t length);
+int string_contain(const string_t *str, const char *cmp, size_t length, const char sep);
+int string_cpy(string_t *str, const char *source, size_t length);
+int string_empty(const string_t *str);
+const char *string_toc(const string_t *str);
+size_t string_length(const string_t *str);
 
 extern const char str_servername[9];
 
@@ -135,7 +143,6 @@ extern const char str_options[8];
 extern const char str_authenticate[17];
 extern const char str_authorization[14];
 extern const char str_Cookie[7];
-extern const char str_SetCookie[10];
 extern const char str_cachecontrol[14];
 extern const char str_xtoken[13];
 extern const char str_xuser[14];
@@ -149,10 +156,10 @@ extern const char str_sec_ws_protocol[23];
 extern const char str_sec_ws_accept[21];
 extern const char str_sec_ws_key[18];
 extern const char str_date[5];
-extern const char *str_authorization_code[5];
-extern const char *str_access_token[12];
-extern const char *str_state[14];
-extern const char *str_expires[8];
+extern const char str_authorization_code[5];
+extern const char str_access_token[12];
+extern const char str_state[14];
+extern const char str_expires[8];
 
 extern const char str_form_urlencoded[34];
 extern const char str_multipart_replace[26];
@@ -165,6 +172,7 @@ extern const char str_user[5];
 extern const char str_group[6];
 extern const char str_home[5];
 extern const char str_status[7];
+extern const char str_issuer[7];
 
 extern const char str_status_approving[10];
 extern const char str_status_reapproving[12];

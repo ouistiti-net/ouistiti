@@ -1,0 +1,31 @@
+HTTP/1.1 302 Found
+WWW-Authenticate: Bearer realm="www.ouistiti.local"
+Location: http://auth.ouistiti.local:8080/token?redirect_uri=http://www.ouistiti.local:8080/index.html
+
+ 302 Found
+HTTP/1.1 302 Found
+WWW-Authenticate: Basic realm="auth.ouistiti.local"
+Location: /trust/signin.html?step=passwd&redirect_uri=https://www.ouistiti.local:8080/index.html
+
+ 302 Found
+HTTP/1.1 200 OK
+Content-Type: text/html
+
+<html>
+	<body>
+		signin
+	</body>
+</html>
+HTTP/1.1 307 Temporary Redirect
+Set-Cookie: X-Auth-Token=eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ1c2VyIjogImpvaG5Eb2UiLCAiaG9tZSI6ICIvaG9tZS9qb2huIiwgInN0YXR1cyI6ICJhY3RpdmF0ZWQiLCAicm9sZXMiOiAidXNlcnMiLCAiZXhwIjogMTgwMCwgImlzcyI6ICJhdXRocGFzcyt0b3RwICJ9.NNFbpUnIAY3zP3NAUU9Eggisw2F-q2AKGD-Y7wmEmVo; Secure; Samesite=Lax; SameSite=strict; Path=/; Domain=.ouistiti.local
+Location: https://www.ouistiti.local:8080/index.html
+
+ 307 Temporary Redirect
+HTTP/1.1 200 OK
+Content-Type: text/html
+
+<html>
+	<body>
+		hello
+	</body>
+</html>

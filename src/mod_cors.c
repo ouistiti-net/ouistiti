@@ -96,7 +96,7 @@ static int _cors_connector(void *arg, http_message_t *request, http_message_t *r
 			ret = ESUCCESS;
 		}
 	}
-	else if (origin && origin[0] != '\0' && httpmessage_isprotected(request) && (strstr(host, origin) == NULL))
+	else if (origin && origin[0] != '\0' && httpmessage_isprotected(request) && (strstr(origin, host) == NULL))
 	{
 		httpmessage_result(response, 405);
 		ret = ESUCCESS;

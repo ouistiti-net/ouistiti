@@ -7,6 +7,7 @@ mod_authmngt_CFLAGS+=$(LIBHTTPSERVER_CFLAGS)
 mod_authmngt_LDFLAGS+=$(LIBHTTPSERVER_LDFLAGS)
 mod_authmngt_LIBS+=$(LIBHTTPSERVER_NAME)
 mod_authmngt_LIBS+=ouiutils
+mod_authmngt_LIBS+=ouihash
 mod_authmngt_LIBRARY+=sqlite3
 
 # mod_authmngt depends on mod_auth

@@ -10,49 +10,53 @@ INTERN_LIBS+=gcov
 O:=0
 endif
 
-reportpath?=$(builddir)
-gcov-target:=$(patsubst %.o,%.c.gcov,$(sort $(foreach t, $(slib-y) $(lib-y) $(bin-y) $(sbin-y) $(modules-y),$($(t)_GENERATED) $(addprefix $(reportpath)$(cwdir),$($(t)-objs)))))
-gcda-target:=$(patsubst %.o,%.gcda,$(sort $(foreach t, $(slib-y) $(lib-y) $(bin-y) $(sbin-y) $(modules-y),$($(t)_GENERATED) $(addprefix $(reportpath)$(cwdir),$($(t)-objs)))))
-gcno-target:=$(patsubst %.o,%.gcno,$(sort $(foreach t, $(slib-y) $(lib-y) $(bin-y) $(sbin-y) $(modules-y),$($(t)_GENERATED) $(addprefix $(reportpath)$(cwdir),$($(t)-objs)))))
+reportdir?=$(builddir)report/
+#gcov-target:=$(patsubst %.o,%.c.gcov,$(sort $(foreach t, $(slib-y) $(lib-y) $(bin-y) $(sbin-y) $(modules-y),$($(t)_GENERATED) $(addprefix $(builddir)$(cwdir),$($(t)-objs)))))
+gcov-target:=$(patsubst %.o,%.c.gcov,$(objs-target))
+gcda-target:=$(patsubst %.o,%.gcda,$(sort $(foreach t, $(slib-y) $(lib-y) $(bin-y) $(sbin-y) $(modules-y),$($(t)_GENERATED) $(addprefix $(builddir)$(cwdir),$($(t)-objs)))))
+gcno-target:=$(patsubst %.o,%.gcno,$(sort $(foreach t, $(slib-y) $(lib-y) $(bin-y) $(sbin-y) $(modules-y),$($(t)_GENERATED) $(addprefix $(builddir)$(cwdir),$($(t)-objs)))))
 clean-target+=$(gcov-target) $(gcda-target) $(gcno-target)
 
 _gcov: action:=_gcov
 _gcov: build:=$(action) -f $(makemore) file
-_gcov: _info $(subdir-target) $(gcov-target)
+_gcov: _info $(subdir-target) $(if $(findstring y,$(GCOV_DISABLED)),,$(gcov-target))
 	@:
 
 gcov: action:=_gcov
 gcov: build:=$(action) -f $(makemore) file
 gcov: default_action ;
 
-gcovhtml: $(reportpath)index.html
-
 quiet_cmd_cc_gcov_c=GCOV $*
  cmd_cc_gcov_c=$(TARGETGCOV) $(GCOV_OPTIONS) -p $(notdir $<) -t > $@;
 quiet_cmd_lcov=LCOV
  cmd_lcov=$(LCOV) --directory $(builddir) --capture --output-file $@
 quiet_cmd_genhtml=GENHTML $@
- cmd_genhtml=$(GENHTML) $< --output-directory $@
+ cmd_genhtml=$(GENHTML) $< --output-directory $(dir $@)
 
-$(reportpath)$(cwdir)%.c.gcov: GCOV_OPTIONS=-o $(dir $@) -s $(dir $<)
-$(reportpath)$(cwdir)%.c.gcov:%.c $(file)
-	@$(call cmd,cc_gcov_c)
+$(objdir)%.c.gcov: GCOV_OPTIONS=-o $(dir $@) -s $(dir $<)
+$(objdir)%.c.gcov:$(srcdir)%.c $(wildcard $(objdir)%.gcno $(objdir)%.gcda)
+	$(Q)$(call cmd,cc_gcov_c)
 
-$(reportpath)$(cwdir)%.c.gcov: GCOV_OPTIONS=-o $(dir $@) -s $(dir $<)
-$(reportpath)$(cwdir)%.c.gcov:%.cpp $(file)
-	@$(call cmd,cc_gcov_c)
+$(objdir)%.c.gcov: GCOV_OPTIONS=-o $(dir $@) -s $(dir $<)
+$(objdir)%.c.gcov:$(srcdir)%.cpp  $(wildcard $(objdir)%.gcno $(objdir)%.gcda)
+	$(Q)$(call cmd,cc_gcov_c)
 
 # for generated files
-$(reportpath)$(cwdir)%.c.gcov: GCOV_OPTIONS=-o $(dir $@) -s $(dir $<)
-$(reportpath)$(cwdir)%.c.gcov:$(obj)%.c $(file)
-	@$(call cmd,cc_gcov_c)
+$(objdir)%.c.gcov: GCOV_OPTIONS=-o $(dir $@) -s $(dir $<)
+$(objdir)%.c.gcov:$(objdir)%.c $(wildcard $(objdir)%.gcno $(objdir)%.gcda)
+	$(Q)$(call cmd,cc_gcov_c)
 
-$(reportpath)$(cwdir)%.c.gcov: GCOV_OPTIONS=-o $(dir $@) -s $(dir $<)
-$(reportpath)$(cwdir)%.c.gcov:$(obj)%.cpp $(file)
-	@$(call cmd,cc_gcov_c)
+$(objdir)%.c.gcov: GCOV_OPTIONS=-o $(dir $@) -s $(dir $<)
+$(objdir)%.c.gcov:$(objdir)%.cpp  $(wildcard $(objdir)%.gcno $(objdir)%.gcda)
+	$(Q)$(call cmd,cc_gcov_c)
 
-$(reportpath)gcov.info: $(gcov-target)
-	@$(call cmd,lcov)
+gcovhtml: $(reportdir) $(reportdir)index.html
 
-$(reportpath)index.html: $(reportpath)gcov.info
-	@$(call cmd,genhtml)
+$(reportdir):
+	$(Q)$(call cmd,mkdir,$@)
+
+$(reportdir)gcov.info:
+	$(Q)$(call cmd,lcov)
+
+$(reportdir)index.html: $(reportdir)gcov.info
+	$(Q)$(call cmd,genhtml)

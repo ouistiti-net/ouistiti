@@ -44,6 +44,10 @@
 
 #define HANDSHAKE 0x01
 #define RECV_COMPLETE 0x02
+/// on server, when the kernel needs more time, it is around 50ms
+/// with time = WANT_TIME * try the time of 15ms gives 2 loops
+#define WANT_TIME 15
+#define MAX_TRIES	10
 
 typedef struct _mod_openssl_s _mod_openssl_t;
 
@@ -153,22 +157,41 @@ static void *_tlsserver_create(void *arg, http_client_t *clt)
 		free(ctx);
 		return NULL;
 	}
-	dbg("tls create");
-	ctx->ssl = SSL_new(mod->openssl_ctx);
-	int sock = httpclient_socket(clt);
+	return ctx;
+}
+
+static int _tlsserver_start(void *arg)
+{
+	_mod_openssl_ctx_t *ctx = (_mod_openssl_ctx_t *)arg;
+	ctx->ssl = SSL_new(ctx->mod->openssl_ctx);
+	if (ctx->ssl == NULL)
+	{
+		free(ctx);
+		return EREJECT;
+	}
+	int sock = httpclient_socket(ctx->clt);
 
 	SSL_set_fd(ctx->ssl, sock);
 	int ret = SSL_accept(ctx->ssl);
-	if (ret <= 0)
+	int try = 0;
+	while (ret <= 0)
 	{
 		int error = SSL_get_error(ctx->ssl, ret);
-		err("tls: create error %d %s", error, ERR_reason_error_string(error));
-		_tls_disconnect(ctx);
-		_tls_destroy(ctx);
-		return NULL;
+		if ((error == SSL_ERROR_WANT_READ || error == SSL_ERROR_WANT_WRITE) && try < MAX_TRIES)
+		{
+			try ++;
+			struct timespec waittime = {0};
+			waittime.tv_nsec = try * WANT_TIME * 1000000;
+			nanosleep(&waittime, NULL);
+			ret = SSL_accept(ctx->ssl);
+			continue;
+		}
+		else
+			err("tls: create error %d", error);
+		return EREJECT;
 	}
-	dbg("tls: connection accepted");
-	return ctx;
+	warn("tls: connection accepted for %p", ctx->clt);
+	return ECONTINUE;
 }
 
 #ifdef TLS_CONNECT
@@ -222,7 +245,7 @@ static int _tls_recv(void *vctx, char *data, size_t size)
 			}
 			else
 			{
-				err("tls: recv error(%d)", error);
+				err("tls: recv error(%d) %s", error, ERR_reason_error_string(error));
 				ret = EREJECT;
 				ctx->state |= RECV_COMPLETE;
 			}
@@ -244,25 +267,30 @@ static int _tls_send(void *vctx, const char *data, size_t size)
 {
 	int ret = 0;
 	_mod_openssl_ctx_t *ctx = (_mod_openssl_ctx_t *)vctx;
+	int try = 0;
 
 	do {
 		ret = SSL_write(ctx->ssl, (unsigned char *)data, size);
 		tls_dbg("tls: send %d %.*s", ret, (int)size, data);
 		if (ret < 0)
 		{
-			warn("tls: send %d %.*s", ret, (int)size, data);
+			dbg("tls: send %d %.*s", ret, (int)size, data);
 			int error = SSL_get_error(ctx->ssl, ret);
-			if (error == SSL_ERROR_WANT_WRITE ||
+			if ((error == SSL_ERROR_WANT_WRITE ||
 				error == SSL_ERROR_WANT_READ ||
-				error == SSL_ERROR_WANT_X509_LOOKUP)
+				error == SSL_ERROR_WANT_X509_LOOKUP) &&
+				try < MAX_TRIES)
 			{
-				err("tls: send error(%d) WANT_DATA", error);
+				try++;
+				dbg("tls: send error(%d) WANT_DATA %ums", error, try * WANT_TIME);
 				ret = EINCOMPLETE;
-				sched_yield();
+				struct timespec waittime = {0};
+				waittime.tv_nsec = try * WANT_TIME * 1000000;
+				nanosleep(&waittime, NULL);
 			}
 			else
 			{
-				err("tls: send error(%d)", error);
+				err("tls: send error(%d) %s", error, ERR_reason_error_string(error));
 				ret = EREJECT;
 			}
 		}
@@ -307,6 +335,7 @@ static const httpclient_ops_t *tlsserver_ops = &(httpclient_ops_t)
 	.default_port = 443,
 	.type = HTTPCLIENT_TYPE_SECURE,
 	.create = &_tlsserver_create,
+	.start = &_tlsserver_start,
 	.recvreq = &_tls_recv,
 	.sendresp = &_tls_send,
 	.wait = &tls_wait,

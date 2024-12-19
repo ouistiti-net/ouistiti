@@ -203,7 +203,7 @@ static int _cookie_connector(void **arg, http_message_t *request, http_message_t
 	return EREJECT;
 }
 
-const char *cookie_get(http_message_t *request, const char *key)
+const char *cookie_get(http_message_t *request, const string_t *key)
 {
 	const char *value = NULL;
 	_cookiesession_t * cookie = NULL;
@@ -218,7 +218,7 @@ const char *cookie_get(http_message_t *request, const char *key)
 				it = cookie->first;
 			if (it == NULL)
 				break;
-			if (key == NULL || !strncmp(it->key, key, strlen(key)))
+			if (key == NULL || !strncmp(it->key, string_toc(key), string_length(key)))
 			{
 				//value = cookie->value;
 				value = it->key;
@@ -233,20 +233,30 @@ const char *cookie_get(http_message_t *request, const char *key)
 	return value;
 }
 #else
-const char *cookie_get(http_message_t *request, const char *key)
+const char *cookie_get(http_message_t *request, const string_t *key)
 {
 	const char *cookie = NULL;
-	httpmessage_cookie(request, key, &cookie);
+	httpmessage_cookie(request, string_toc(key), &cookie);
 	return cookie;
 }
 #endif
 
-int cookie_set(http_message_t *response, const char *key, const char *value, ...)
+int cookie_get2(http_message_t *request, const string_t *key, string_t *cookie)
+{
+	const char *tcookie = NULL;
+	size_t length = httpmessage_cookie(request, string_toc(key), &tcookie);
+	string_store(cookie, tcookie, length);
+	return !string_empty(cookie)?ESUCCESS:EREJECT;
+}
+
+int cookie_set(http_message_t *response, const string_t *key, const string_t *value, ...)
 {
 	int ret = 0;
 	const char *domain = NULL;
 	size_t domainlen = httpmessage_REQUEST2(response, "domain", &domain);
-	httpmessage_addheader(response, str_SetCookie, key, -1);
+	ret = httpmessage_addheader(response, str_SetCookie, string_toc(key), string_length(key));
+	if (ret == EREJECT)
+		return EREJECT;
 	httpmessage_appendheader(response, str_SetCookie, STRING_REF("="));
 #ifdef USE_STDARG
 	va_list ap;
@@ -254,9 +264,9 @@ int cookie_set(http_message_t *response, const char *key, const char *value, ...
 	while (value != NULL)
 	{
 #endif
-		ret = httpmessage_appendheader(response, str_SetCookie, value, -1);
+		ret = httpmessage_appendheader(response, str_SetCookie, string_toc(value), string_length(value));
 #ifdef USE_STDARG
-		value = va_arg(ap, const char *);
+		value = va_arg(ap, string_t *);
 	}
 	va_end(ap);
 #endif

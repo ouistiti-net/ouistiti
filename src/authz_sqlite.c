@@ -50,6 +50,9 @@
 #define DEFAULT_GROUPID 2
 #define STRINGIFY(x) #x
 
+#define AUTHZ_SQLITE_CONTEXTSETUP
+#define AUTHZ_SQLITE_GLOBALDB
+
 #ifdef DEBUG
 #define SQLITE3_CHECK(ret, value, sql) \
 	do { \
@@ -61,6 +64,9 @@
 #else
 #define SQLITE3_CHECK(...)
 #endif
+
+static sqlite3 *g_db = NULL;
+int g_dbref = 0;
 
 static int authz_sqlite_userid(authz_sqlite_t *ctx, const char *user);
 
@@ -103,7 +109,9 @@ static int _authz_sqlite_createdb(const char *dbname)
 					"FOREIGN KEY (groupid) REFERENCES groups(id) ON UPDATE SET NULL,"
 					"FOREIGN KEY (statusid) REFERENCES status(id) ON UPDATE SET NULL);",
 		"create table session (\"token\" TEXT PRIMARY KEY, \"userid\" INTEGER NOT NULL,\"expire\" INTEGER,"
-					"FOREIGN KEY (userid) REFERENCES users(id) ON UPDATE SET NULL);",
+					"FOREIGN KEY (userid) REFERENCES users(id) ON DELETE CASCADE);",
+		"create table issuers (\"userid\" INTEGER NOT NULL,\"issuer\" TEXT,"
+					"FOREIGN KEY (userid) REFERENCES users(id) ON DELETE CASCADE);",
 		"insert into status (id, name) values(1, \"approving\");",
 		"insert into status (id, name) values(2, \"activated\");",
 		"insert into status (id, name) values(3, \"repudiated\");",
@@ -124,6 +132,10 @@ static int _authz_sqlite_createdb(const char *dbname)
 #ifdef DEBUG
 		"insert into users (name,groupid, statusid,passwd,home)"
 			"values(\"foo\",(select id from groups where name=\"users\"),(select id from status where name=\"activated\"),\"bar\",\"/home/foo\");",
+		"insert into users (name,groupid, statusid,passwd,home)"
+			"values(\"johnDoe\",(select id from groups where name=\"users\"),(select id from status where name=\"activated\"),\"jane\",\"/home/john\");",
+		"insert into issuers (userid,issuer)"
+			"values((select id from users where name=\"johnDoe\"),\"totp\");",
 #endif
 		NULL,
 	};
@@ -146,47 +158,66 @@ static int _authz_sqlite_createdb(const char *dbname)
 	return (ret == SQLITE_OK)?ESUCCESS:EREJECT;
 }
 
+static sqlite3 * _authz_sqlite_opendb(const char *dbname)
+{
+#ifdef AUTHZ_SQLITE_GLOBALDB
+	g_dbref++;
+	if (g_db != NULL)
+		return g_db;
+#endif
+	sqlite3 *db = NULL;
+	/// sqlite3 documentation tells to open the database for each process and only once per process
+	int ret = sqlite3_open_v2(dbname, &db, SQLITE_OPEN_READONLY, NULL);
+	if (ret != SQLITE_OK)
+	{
+		err("auth: database %s not found", dbname);
+		return NULL;
+	}
+#ifdef AUTHZ_SQLITE_GLOBALDB
+	g_db = db;
+#endif
+	return db;
+}
+
 static void *authz_sqlite_create(http_server_t *UNUSED(server), void *arg)
 {
 	authz_sqlite_t *ctx = NULL;
-	const authz_sqlite_config_t *config = (const authz_sqlite_config_t *)arg;
+	authz_sqlite_config_t *config = (authz_sqlite_config_t *)arg;
 
-	if (access(config->dbname, R_OK))
+	if (access(config->dbname, R_OK) && _authz_sqlite_createdb(config->dbname) == EREJECT)
 	{
-		_authz_sqlite_createdb(config->dbname);
+		err("auth: database %s storage not allowed", config->dbname);
+		warn("auth: check if %s is not a broken link", config->dbname);
+		return NULL;
 	}
 	auth_dbg("auth: authentication DB storage on %s", config->dbname);
 
 	ctx = calloc(1, sizeof(*ctx));
 	ctx->config = config;
+	ctx->db = _authz_sqlite_opendb(config->dbname);
 	return ctx;
 }
 
 static void *authz_sqlite_setup(void *arg)
 {
 	authz_sqlite_t *ctx = (authz_sqlite_t *)arg;
+	const authz_sqlite_config_t *config = ctx->config;
 	int ret;
-	ctx->ref++;
 	authz_sqlite_t *cltctx = ctx;
-/**
+#ifdef AUTHZ_SQLITE_CONTEXTSETUP
 	cltctx = calloc(1, sizeof(*cltctx));
 	cltctx->config = ctx->config;
 	cltctx->ref = ctx->ref;
-	if (ctx->db == NULL)
+	if (ctx->db == NULL && config)
 	{
-*/
-		/// sqlite3 documentation tells to open the database for each process
-		ret = sqlite3_open_v2(ctx->config->dbname, &ctx->db, SQLITE_OPEN_READONLY, NULL);
-		if (ret != SQLITE_OK)
-		{
-			err("auth: database not found %s", ctx->config->dbname);
-			return NULL;
-		}
-		auth_dbg("auth: authentication DB storage on %s", ctx->config->dbname);
-/**
+#endif
+		ctx->db = _authz_sqlite_opendb(config->dbname);
+		auth_dbg("auth: authentication DB storage on %s from setup", ctx->config->dbname);
+#ifdef AUTHZ_SQLITE_CONTEXTSETUP
 	}
 	cltctx->db = ctx->db;
-**/
+#endif
+	ctx->ref++;
 	return cltctx;
 }
 
@@ -287,57 +318,76 @@ int authz_sqlite_getuser_byName(authz_sqlite_t *ctx, const char * user, storeinf
 	return EREJECT;
 }
 
+#define GETUSER_ONID 1
+#ifdef GETUSER_ONID
 int authz_sqlite_getuser_byID(authz_sqlite_t *ctx, int id, storeinfo_t callback, void *cbarg)
 {
 	int ret;
-#if 0
 	const char *sql = "select users.name as \"user\", groups.name as \"group\", status.name as \"status\", home " \
 						"from users " \
 						"inner join groups on groups.id=users.groupid " \
 						"inner join status on status.id=users.statusid " \
-						"where users.ROWID=@ID;";
-#else
-	const char *sql = "select users.name as \"user\", groups.name as \"group\", status.name as \"status\", home " \
-						"from users " \
-						"inner join groups on groups.id=users.groupid " \
-						"inner join status on status.id=users.statusid;";
-#endif
+						"where users.id=@ID;";
 
 	sqlite3_stmt *statement = NULL; /// use a specific statement
 	ret = sqlite3_prepare_v2(ctx->db, sql, -1, &statement, NULL);
 	SQLITE3_CHECK(ret, EREJECT, sql);
 
-#if 0
 	int index = 0;
 	index = sqlite3_bind_parameter_index(statement, "@ID");
 	ret = sqlite3_bind_int(statement, index, id);
 	SQLITE3_CHECK(ret, EREJECT, sql);
-#endif
 
 	auth_dbg("auth: sql query %s", sqlite3_expanded_sql(statement));
 	ret = sqlite3_step(statement);
-	int j = 1;
-	while (ret == SQLITE_ROW)
+	if (ret == SQLITE_ROW)
 	{
-		if (j != id)
-		{
-			ret = sqlite3_step(statement);
-			j++;
-			continue;
-		}
 		ret = _authz_sqlite_storeuser(ctx, statement, callback, cbarg);
 		sqlite3_finalize(statement);
 		return ret;
 	}
-	err("auth: getuser error %s", sqlite3_errmsg(ctx->db));
+	err("auth: user (%d) not found", id);
 	sqlite3_finalize(statement);
 	return EREJECT;
 }
+#else
+int authz_sqlite_getuser_byID(authz_sqlite_t *ctx, int id, storeinfo_t callback, void *cbarg)
+{
+	int ret;
+	const char *sql = "select users.name as \"user\", groups.name as \"group\", status.name as \"status\", home " \
+						"from users " \
+						"inner join groups on groups.id=users.groupid " \
+						"inner join status on status.id=users.statusid;";
 
-static int authz_sqlite_setsession(void *arg, const char *user, auth_saveinfo_t cb, void *cbarg)
+	sqlite3_stmt *statement = NULL; /// use a specific statement
+	ret = sqlite3_prepare_v2(ctx->db, sql, -1, &statement, NULL);
+	SQLITE3_CHECK(ret, EREJECT, sql);
+
+	auth_dbg("auth: sql query %s", sqlite3_expanded_sql(statement));
+	ret = sqlite3_step(statement);
+	for (int j = 0; ret == SQLITE_ROW) && j != id; j++
+	{
+		ret = sqlite3_step(statement);
+	}
+	if (ret == SQLITE_ROW)
+	{
+		ret = _authz_sqlite_storeuser(ctx, statement, callback, cbarg);
+		sqlite3_finalize(statement);
+		return ret;
+	}
+	err("auth: user (%d) not found", id);
+	sqlite3_finalize(statement);
+	return EREJECT;
+}
+#endif
+
+static int authz_sqlite_setsession(void *arg, const char *user, const char *token, auth_saveinfo_t cb, void *cbarg)
 {
 	authz_sqlite_t *ctx = (authz_sqlite_t *)arg;
-	return authz_sqlite_getuser_byName(ctx, user, cb, cbarg);
+	int ret = authz_sqlite_getuser_byName(ctx, user, cb, cbarg);
+	if (ret == ESUCCESS && token)
+		cb(cbarg, STRING_REF(str_token), token, -1);
+	return ret;
 }
 
 static int authz_sqlite_passwd(void *arg, const char *user, const char **passwd)
@@ -394,9 +444,9 @@ static int _authz_sqlite_checkpasswd(authz_sqlite_t *ctx, const char *user, cons
 	if (checkpasswd != NULL)
 	{
 		string_t userstr = {0};
-		_string_store(&userstr, user, -1);
+		string_store(&userstr, user, -1);
 		string_t passwdstr = {0};
-		_string_store(&passwdstr, passwd, -1);
+		string_store(&passwdstr, passwd, -1);
 		if (authz_checkpasswd(checkpasswd, &userstr, NULL, &passwdstr) == ESUCCESS)
 			ret = 1;
 	}
@@ -432,7 +482,7 @@ static const char *authz_sqlite_check(void *arg, const char *user, const char *p
 	return user;
 }
 
-int authz_sqlite_getid(authz_sqlite_t *ctx, const char *name, int group)
+int authz_sqlite_getid(authz_sqlite_t *ctx, const char *name, int length, int group)
 {
 	int userid = EREJECT;
 	int ret;
@@ -457,7 +507,7 @@ int authz_sqlite_getid(authz_sqlite_t *ctx, const char *name, int group)
 	int index;
 	index = sqlite3_bind_parameter_index(statement, "@NAME");
 	if (index > 0)
-		ret = sqlite3_bind_text(statement, index, name, -1, SQLITE_STATIC);
+		ret = sqlite3_bind_text(statement, index, name, length, SQLITE_STATIC);
 	if (ret != SQLITE_OK) {
 		err("%s(%d) %d: %s\n%s", __FUNCTION__, __LINE__, ret, sql[group], sqlite3_errmsg(ctx->db));
 		sqlite3_finalize(statement);
@@ -476,7 +526,7 @@ int authz_sqlite_getid(authz_sqlite_t *ctx, const char *name, int group)
 
 static int authz_sqlite_userid(authz_sqlite_t *ctx, const char *name)
 {
-	return authz_sqlite_getid(ctx, name, 0);
+	return authz_sqlite_getid(ctx, name, -1, 0);
 }
 
 #ifdef AUTH_TOKEN
@@ -580,6 +630,46 @@ static int authz_sqlite_join(void *arg, const char *user, const char *token, int
 #define authz_sqlite_join NULL
 #endif
 
+size_t authz_sqlite_issuer(void *arg, const char *user, char *issuer, size_t length)
+{
+	authz_sqlite_t *ctx = (authz_sqlite_t *)arg;
+	int userid = authz_sqlite_userid(ctx, user);
+
+	if (userid == EREJECT)
+	{
+		return EREJECT;
+	}
+
+	size_t len = 0;
+	int ret;
+	const char *sql = "select issuer from issuers where userid=@USERID;";
+
+	sqlite3_stmt *statement; /// use a specific statement, it is useless to keep the result at exit
+	ret = sqlite3_prepare_v2(ctx->db, sql, -1, &statement, NULL);
+	SQLITE3_CHECK(ret, EREJECT, sql);
+
+	int index;
+	index = sqlite3_bind_parameter_index(statement, "@USERID");
+	ret = sqlite3_bind_int(statement, index, userid);
+	SQLITE3_CHECK(ret, EREJECT, sql);
+
+	ret = sqlite3_step(statement);
+	if (ret == SQLITE_ROW)
+	{
+		if (sqlite3_column_type(statement, 0) == SQLITE_TEXT)
+		{
+			len = sqlite3_column_bytes(statement, 0);
+			const char *data = sqlite3_column_text(statement, 0);
+			if (data[0] == '\0')
+				len = 0;
+			snprintf(issuer, length, "%.*s", (int)len, data);
+		}
+		ret = sqlite3_step(statement);
+	}
+	sqlite3_finalize(statement);
+	return len;
+}
+
 static void authz_sqlite_cleanup(void *arg)
 {
 	authz_sqlite_t *ctx = (authz_sqlite_t *)arg;
@@ -588,18 +678,21 @@ static void authz_sqlite_cleanup(void *arg)
 		sqlite3_finalize(ctx->statement);
 	ctx->statement = NULL;
 	ctx->ref--;
-	if (ctx->ref == 0)
-	{
-		sqlite3_close(ctx->db);
-		ctx->db = NULL;
-	}
-//	free(ctx);
+#ifdef AUTHZ_SQLITE_CONTEXTSETUP
+	free(ctx);
+#endif
 }
 
 static void authz_sqlite_destroy(void *arg)
 {
 	authz_sqlite_t *ctx = (authz_sqlite_t *)arg;
-
+#ifdef AUTHZ_SQLITE_GLOBALDB
+	if (g_dbref == 0)
+#endif
+	{
+		sqlite3_close(ctx->db);
+	}
+	free(ctx->config);
 	free(ctx);
 }
 
@@ -609,6 +702,7 @@ authz_rules_t authz_sqlite_rules =
 	.setup = &authz_sqlite_setup,
 	.check = &authz_sqlite_check,
 	.passwd = &authz_sqlite_passwd,
+	.issuer = &authz_sqlite_issuer,
 	.setsession = &authz_sqlite_setsession,
 	.join = &authz_sqlite_join,
 	.cleanup = &authz_sqlite_cleanup,

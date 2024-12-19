@@ -9,7 +9,7 @@ servers= ({
 		auth = {
 			type="Basic";
 			file="%PWD%/tests/conf/passwd";
-			options="token,header";
+			options="jwt,header";
 			secret = "kXp2s5v8y/B?E(H+KbPeShVmYq3t6w9z";
 			realm="www.ouistiti.net";
 		};

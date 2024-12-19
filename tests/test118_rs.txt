@@ -1,16 +1,4 @@
-HTTP/1.1 307 Temporary Redirect
-Set-Cookie: X-Auth-Token=eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ1c2VyIjogImZvbyIsICJzdGF0dXMiOiAiYWN0aXZhdGVkIiwgInJvbGVzIjogInVzZXJzIiwgImV4cCI6IDE4MDAsICJpc3MiOiAidG90cCJ9.wcuTvq01mglVcqCOKBvy01lv9B-dm5N5R9ZTpFC2-Tc; SameSite=strict; Path=/; Domain=.ouistiti.local
+HTTP/1.1 200 OK
+Set-Cookie: X-Auth-Token=eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ1c2VyIjogImZvbyIsICJzdGF0dXMiOiAiYWN0aXZhdGVkIiwgInJvbGVzIjogInVzZXJzIiwgImV4cCI6IDE4MDAsICJpc3MiOiAidG90cCJ9.wcuTvq01mglVcqCOKBvy01lv9B-dm5N5R9ZTpFC2-Tc; Secure; Samesite=Lax; SameSite=strict; Path=/; Domain=.ouistiti.local
 Set-Cookie: X-Remote-User=foo; SameSite=strict; Path=/; Domain=.ouistiti.local
 Set-Cookie: X-Remote-Group=users; SameSite=strict; Path=/; Domain=.ouistiti.local
-Location: https://www.ouistiti.local:8080/index.html
-Content-Type: text/plain
-Content-Length: 25
-Connection: Close
-
- 307 Temporary Redirect
-HTTP/1.1 500 Internal Server Error
-Content-Type: text/plain
-Content-Length: 28
-Connection: Close
-
- 500 Internal Server Error

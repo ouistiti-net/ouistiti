@@ -1,0 +1,8 @@
+POST /token_totp?redirect_uri=https://www.ouistiti.local:8080/index.html HTTP/1.1
+HOST: auth.ouistiti.local
+Connection: Close
+Authorization: Basic Zm9vOmJhcg==
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 30
+
+username=foo&password=123994
